@@ -1,0 +1,35 @@
+# Private: names employer, internal systems and real customers (SPEC §19, ADR-036)
+BLUEPRINT.md
+# Sample sentences name real organisations; re-add once neutralized (SPEC §19)
+az_token_benchmark.py
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Runtime data
+workspaces/
+runs/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
