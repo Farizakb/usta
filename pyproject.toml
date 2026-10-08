@@ -9,6 +9,7 @@ dependencies = [
     "anthropic>=1,<2",
     "asyncpg>=0.30,<1",
     "jsonschema>=4.23,<5",
+    "litellm==1.102.1",
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
     "sqlalchemy[asyncio]>=2.0.36,<2.1",
@@ -71,7 +72,6 @@ source_modules = ["usta"]
 forbidden_modules = ["litellm"]
 allow_indirect_imports = true
 ignore_imports = ["usta.models.litellm_adapter -> litellm"]
-unmatched_ignore_imports_alerting = "none"  # adapter arrives in a later task
 
 [[tool.importlinter.contracts]]
 name = "Anthropic SDK only in its adapter (ADR-020)"
@@ -80,3 +80,12 @@ source_modules = ["usta"]
 forbidden_modules = ["anthropic"]
 allow_indirect_imports = true
 ignore_imports = ["usta.models.anthropic_adapter -> anthropic"]
+
+[[tool.importlinter.contracts]]
+name = "Adapters are independent (P5)"
+type = "independence"
+modules = [
+    "usta.models.anthropic_adapter",
+    "usta.models.litellm_adapter",
+    "usta.models.fake",
+]
