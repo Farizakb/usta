@@ -5,6 +5,7 @@ import pytest
 from tests.fakes import ECHO, InMemoryStore
 from usta.core.messages import ToolCall, ToolResult
 from usta.core.run import RunState
+from usta.models import toolnames
 from usta.tools.pipeline import ToolPipeline
 from usta.tools.registry import Tool, ToolOutput, ToolRegistry
 
@@ -75,7 +76,16 @@ def test_registry_rejects_bad_names_and_duplicates() -> None:
     reg = ToolRegistry([ECHO])
     with pytest.raises(ValueError, match="duplicate"):
         reg.register(ECHO)
-    for bad in ["File.read", "file__read", "file..read", "", "a_.b", "a._b", "file.read_"]:
+    for bad in [
+        "File.read",
+        "file__read",
+        "file..read",
+        "",
+        "a_.b",
+        "a._b",
+        "file.read_",
+        "todo\n",
+    ]:
         with pytest.raises(ValueError, match="invalid tool name"):
             reg.register(
                 Tool(
@@ -101,6 +111,11 @@ def test_registry_accepts_names_that_round_trip_on_the_wire() -> None:
             )
         )
     assert reg.names() == ["file.read", "fleet.fuel_report", "todo"]
+
+
+def test_accepted_names_round_trip_through_the_wire_codec() -> None:
+    for name in ["file.read", "fleet.fuel_report", "todo"]:
+        assert toolnames.decode(toolnames.encode(name)) == name
 
 
 def test_specs_are_sorted_for_a_stable_cached_prefix() -> None:

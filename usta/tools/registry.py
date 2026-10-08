@@ -57,7 +57,7 @@ class ToolRegistry:
             self.register(tool)
 
     def register(self, tool: Tool) -> None:
-        if not _NAME.match(tool.name) or "__" in tool.name:
+        if not _NAME.fullmatch(tool.name) or "__" in tool.name:
             raise ValueError(f"invalid tool name {tool.name!r}")
         if tool.name in self._tools:
             raise ValueError(f"duplicate tool {tool.name!r}")

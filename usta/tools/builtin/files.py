@@ -14,6 +14,8 @@ MAX_CHARS = 50_000  # until layer-1 offload (M3) stores large results as files
 
 def resolve(path: str, ctx: ToolContext) -> Path:
     """Map 'files/...' or 'out/...' to a real path inside the user's workspace; refuse escapes."""
+    if "\x00" in path:
+        raise ToolInputError(f"path contains a NUL byte: {path!r}")
     rel = PurePosixPath(path)
     roots = {"files": ctx.files_dir, "out": ctx.out_dir}
     if rel.is_absolute() or not rel.parts or rel.parts[0] not in roots:

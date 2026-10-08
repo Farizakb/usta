@@ -41,6 +41,11 @@ async def test_paths_outside_the_workspace_are_refused(ctx: ToolContext, path: s
         await FILE_READ.fn({"path": path}, ctx)
 
 
+async def test_nul_byte_in_path_is_refused_cleanly(ctx: ToolContext) -> None:
+    with pytest.raises(ToolInputError, match="NUL"):
+        await FILE_READ.fn({"path": "files/a\x00b"}, ctx)
+
+
 async def test_symlink_escape_is_refused(ctx: ToolContext, tmp_path: Path) -> None:
     secret = tmp_path / "secret.txt"
     secret.write_text("token", encoding="utf-8")
