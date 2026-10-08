@@ -5726,7 +5726,7 @@ git tag m0 && git push origin m0
 - `Settings.config_dir` is relative, so the CLI must run from the repo root.
 - The monthly user cap only refuses new runs. A run in progress stops at its own per-run cap.
 - Run exclusion is in-process only (Worker guard, Task 10). Two `usta` processes resuming the same run fail loudly on the `run_checkpoints` PK rather than being prevented; a lease (`lease_owner` / `lease_until`) is a later additive migration.
-- gVisor spike failed in WSL2 (runsc `StartRoot` EOF on default systrap platform, ADR-005). Untested: `--platform=ptrace` in the runsc runtime args (needs sudo). M0 uses no sandbox.
+- gVisor in WSL2 works only on runsc platforms `kvm`/`ptrace` (default `systrap` fails; ADR-005). The production VM's platform is checked at VM setup. M0 uses no sandbox.
 - LiteLLM adapter: provider-specific fields such as Gemini thought signatures are not preserved unless Task 15 forces it.
 - ⚠️ Preserved-thinking enforcement on Sonnet/Opus 5.5 conflicts with history-editing context layers. Revisit ADR-017 before M3 (Plan Decision 5).
 
