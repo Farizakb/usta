@@ -1,8 +1,16 @@
 """Test doubles. Never imported by usta/ (P8)."""
 
+from pathlib import Path
+
 from usta.core.audit import ModelCallRecord, ToolCallRecord
 from usta.core.events import Event
 from usta.core.run import RunState, RunStatus
+from usta.models.fake import FakeModel, ScriptStep
+from usta.models.gateway import Gateway
+from usta.models.pricing import Price
+from usta.ports import RunContext
+from usta.tools.pipeline import ToolPipeline
+from usta.tools.registry import Tool, ToolContext, ToolOutput, ToolRegistry
 
 
 class InMemoryStore:
@@ -57,3 +65,42 @@ class FakeClock:
         t = self.now
         self.now += self.step
         return t
+
+
+async def _echo(args: dict, ctx: ToolContext) -> ToolOutput:
+    return ToolOutput(f"echo: {args['text']}")
+
+
+ECHO = Tool(
+    name="test.echo",
+    description="Echo text back.",
+    input_schema={
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+        "additionalProperties": False,
+    },
+    tier="local",
+    fn=_echo,
+)
+
+# 10 input + 5 output tokens (the fake's default usage) cost $0.20 + $0.10 = $0.30.
+FAKE_PRICE = Price(input=20_000, output=20_000, cache_read=0, cache_write=0)
+
+
+async def _no_sleep(_seconds: float) -> None:
+    return None
+
+
+def make_context(
+    script: list[ScriptStep],
+    store: InMemoryStore,
+    workspace_root: Path,
+    *,
+    tools: tuple[Tool, ...] = (ECHO,),
+    price: Price = FAKE_PRICE,
+) -> tuple[RunContext, FakeModel]:
+    model = FakeModel(script)
+    gateway = Gateway({"main": model}, {model.model_id: price}, audit=store, sleep=_no_sleep)
+    pipeline = ToolPipeline(ToolRegistry(tools), audit=store, workspace_root=workspace_root)
+    return RunContext(models=gateway, tools=pipeline, store=store), model
