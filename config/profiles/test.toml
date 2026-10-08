@@ -1,0 +1,9 @@
+# T1/T3a: fake model, no network. The only profile allowed fake models and docker_hardened (P8).
+engine = "own"
+sandbox = "docker_hardened"
+
+[roles.main]
+model = "fake-model"
+
+[roles.light]
+model = "fake-model"

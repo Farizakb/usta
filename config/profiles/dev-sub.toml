@@ -1,0 +1,6 @@
+# engine=sdk on the Claude subscription (lands in M3). P4 guards apply now.
+engine = "sdk"
+sandbox = "gvisor"
+
+[roles.main]
+model = "claude-sonnet-5-5"
