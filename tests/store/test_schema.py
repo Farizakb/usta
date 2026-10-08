@@ -1,8 +1,10 @@
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text
+from sqlalchemy import CheckConstraint, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
+
+from usta.store.tables import metadata
 
 pytestmark = pytest.mark.pg
 
@@ -91,8 +93,7 @@ async def test_runs_status_index_is_partial(db_engine) -> None:
                 text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_runs_status'")
             )
         ).scalar_one()
-    assert "WHERE" in definition
-    assert "'finished'" in definition
+    assert "WHERE (status <> 'finished'::text)" in definition
 
 
 async def test_runs_status_accepts_all_six_values_and_rejects_others(db_engine) -> None:
@@ -152,3 +153,33 @@ async def test_purge_role_deletes_run_and_cascades_checkpoints(db_engine) -> Non
     async with db_engine.connect() as conn:
         count = (await conn.execute(text("SELECT count(*) FROM run_checkpoints"))).scalar_one()
     assert count == 0
+
+
+async def test_checks_and_indexes_match_metadata(db_engine) -> None:
+    """`alembic check` ignores CHECK constraints and index predicates, so compare them here."""
+    async with db_engine.connect() as conn:
+        db_checks = {
+            (r[0], r[1])
+            for r in await conn.execute(
+                text(
+                    "SELECT conrelid::regclass::text, conname FROM pg_constraint "
+                    "WHERE contype = 'c' AND connamespace = 'public'::regnamespace"
+                )
+            )
+        }
+        db_indexes = dict(
+            (await conn.execute(text("SELECT indexname, indexdef FROM pg_indexes"))).all()
+        )
+    expected_checks = {
+        (table.name, c.name)
+        for table in metadata.tables.values()
+        for c in table.constraints
+        if isinstance(c, CheckConstraint)
+    }
+    assert db_checks == expected_checks
+    for table in metadata.tables.values():
+        for index in table.indexes:
+            assert index.name in db_indexes, index.name
+            assert ("WHERE" in db_indexes[index.name]) == bool(
+                index.dialect_options["postgresql"]["where"] is not None
+            ), index.name

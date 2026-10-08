@@ -18,6 +18,32 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
 metadata = MetaData()
 
+# Duplicated in migration 0001 on purpose (migrations stay self-contained);
+# tests/store/test_schema.py compares constraint names and index predicates.
+STATUSES = (
+    "queued",
+    "running",
+    "awaiting_approval",
+    "awaiting_user",
+    "unknown_outcome",
+    "finished",
+)
+STOP_REASONS = (
+    "done",
+    "verification_failed",
+    "max_turns",
+    "budget_declined",
+    "timeout",
+    "provider_quota",
+    "cancelled",
+    "interrupted",
+    "error",
+)
+
+
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(v) for v in values)})"
+
 
 def _ts(name: str, default: str | None = "now()", nullable: bool = False) -> Column:
     return Column(
@@ -58,6 +84,13 @@ runs = Table(
     _ts("created_at"),
     _ts("updated_at"),
     _ts("finished_at", default=None, nullable=True),
+    CheckConstraint(_in("status", STATUSES), name="ck_runs_status"),
+    CheckConstraint(
+        "stop_reason IS NULL OR " + _in("stop_reason", STOP_REASONS), name="ck_runs_stop_reason"
+    ),
+    CheckConstraint(
+        "(status = 'finished') = (stop_reason IS NOT NULL)", name="ck_runs_finished_has_reason"
+    ),
     Index("ix_runs_status", "status", postgresql_where=text("status <> 'finished'")),
     Index("ix_runs_user_created", "user_id", "created_at"),
 )
@@ -110,6 +143,7 @@ tool_calls = Table(
     Column("is_error", Boolean, nullable=True),
     Column("latency_ms", Integer, nullable=True),
     _ts("created_at", default="clock_timestamp()"),
+    CheckConstraint("phase IN ('intent', 'done')", name="ck_tool_calls_phase"),
     Index("ix_tool_calls_run_call", "run_id", "call_id"),
 )
 
