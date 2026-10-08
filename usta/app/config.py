@@ -59,6 +59,8 @@ def load_profile(name: str, config_dir: Path) -> Profile:
     if not path.is_file():
         raise ConfigError(f"unknown profile {name!r}: {path} not found")
     data = tomllib.loads(path.read_text(encoding="utf-8"))
+    if "name" in data:  # the filename is the name; `name = "test"` would unlock P8 test-only gates
+        raise ConfigError(f"{path}: remove the `name` key; a profile is named by its file")
     try:
         return Profile.model_validate({"name": name, **data})
     except ValidationError as e:

@@ -76,3 +76,13 @@ def test_profile_without_main_role_is_refused() -> None:
     )
     with pytest.raises(ConfigError, match="main role"):
         validate_startup(p, CATALOG, {})
+
+
+def test_profile_file_cannot_rename_itself_p8(tmp_path: Path) -> None:
+    (tmp_path / "profiles").mkdir()
+    (tmp_path / "profiles" / "x.toml").write_text(
+        'name = "test"\nengine = "own"\nsandbox = "docker_hardened"\n[roles.main]\nmodel = "fake-model"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="name"):
+        load_profile("x", tmp_path)
