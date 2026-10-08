@@ -3997,6 +3997,17 @@ git commit -m "feat(worker): submit, execute, budget answer, cancel, crash recov
 
 Audit tables use app-generated UUIDs, so the app role never needs sequence grants. Audit `created_at` uses `clock_timestamp()`, so rows written in one transaction keep their order.
 
+**Schema decisions (grilling round 1, approved by Fariz 2026-10-08):**
+1. `runs.status` CHECK lists all 6 `RunStatus` values (matches the enum, incl. M2's `awaiting_approval` / `unknown_outcome`).
+2. No cross-process run lease in M0. The `run_checkpoints` PK `(run_id, seq)` makes a second writer fail loudly. Nullable `lease_owner` / `lease_until` columns are a later additive migration (see Known Limitations).
+3. Costs stay `double precision` (Plan Decision 11); the README states why.
+4. `user_month_cost` sums `model_calls.cost_usd` (the audit table is the P7 source of truth), not `runs.cost_usd`.
+5. The month boundary is UTC: `created_at >= date_trunc('month', now() AT TIME ZONE 'UTC')`.
+6. `users.id` gets `CHECK (id ~ '^[a-z0-9][a-z0-9_-]{0,63}$')`; app code also validates before insert for a clear message.
+7. Audit append-only via grants only (no trigger); `tests/store/test_schema.py` proves `usta_app` cannot `UPDATE`, `DELETE` or `TRUNCATE` audit tables.
+8. `model_calls.request` stores the full request in M0; revisit size at M3 with real numbers.
+9. Every checkpoint writes the `run_checkpoints` row and updates the `runs` summary in one transaction (Task 12 rule).
+
 - [ ] **Step 0: STOP. Show Fariz the schema table above and get explicit approval** (or changes) before writing the migration. If anything changes, update this table first.
 
 - [ ] **Step 1: Write the fixtures and the failing test.** `tests/conftest.py`:
@@ -5714,6 +5725,8 @@ git tag m0 && git push origin m0
 - `ModelCallRecord.request` stores the full history on every call, so audit size grows quadratically with turns. Revisit storage in M3 (e.g. store per-turn deltas).
 - `Settings.config_dir` is relative, so the CLI must run from the repo root.
 - The monthly user cap only refuses new runs. A run in progress stops at its own per-run cap.
+- Run exclusion is in-process only (Worker guard, Task 10). Two `usta` processes resuming the same run fail loudly on the `run_checkpoints` PK rather than being prevented; a lease (`lease_owner` / `lease_until`) is a later additive migration.
+- gVisor spike failed in WSL2 (runsc `StartRoot` EOF on default systrap platform, ADR-005). Untested: `--platform=ptrace` in the runsc runtime args (needs sudo). M0 uses no sandbox.
 - LiteLLM adapter: provider-specific fields such as Gemini thought signatures are not preserved unless Task 15 forces it.
 - ⚠️ Preserved-thinking enforcement on Sonnet/Opus 5.5 conflicts with history-editing context layers. Revisit ADR-017 before M3 (Plan Decision 5).
 
