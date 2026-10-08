@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from usta.core.budget import Budget
 from usta.core.errors import UserBudgetExceeded
 from usta.core.events import Event
 from usta.core.model import Usage
-from usta.core.run import RunStatus, StopReason
+from usta.core.run import RunState, RunStatus, StopReason
 from usta.engines.own.loop import OwnEngine
 from usta.models.fake import call, reply
 from usta.worker import Worker
@@ -123,3 +124,62 @@ async def test_recover_resumes_a_run_that_crashed_after_a_checkpoint(tmp_path: P
     final = await store.load(run.id)
     assert final.stop_reason == StopReason.DONE and final.final_text() == "hazır"
     assert [r.phase for r in store.tool_calls] == ["intent", "done"]  # executed exactly once
+
+
+async def test_concurrent_budget_approvals_raise_cap_once(tmp_path: Path) -> None:
+    script = [call("test.echo", {"text": str(i)}) for i in range(2)] + [reply("bitdi")]
+    worker, store, _, _ = make_worker(script, tmp_path)
+    run = await worker.execute((await worker.submit("u1", "t")).id)
+    results = await asyncio.gather(
+        worker.answer_budget(run.id, approve=True),
+        worker.answer_budget(run.id, approve=True),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(r, ValueError) for r in results) == 1
+    final = await store.load(run.id)
+    assert final.stop_reason == StopReason.DONE and final.cost_cap_usd == pytest.approx(1.0)
+    assert [e.type for e in store.events].count("finished") == 1
+
+
+async def test_execute_on_a_live_run_does_not_start_a_second_loop(tmp_path: Path) -> None:
+    inner: list[RunState] = []
+
+    async def on_event(ev: Event) -> None:
+        if ev.type == "run_started" and not inner:
+            inner.append(await worker.execute(run.id))
+
+    worker, store, _, _ = make_worker([reply("Hazır.")], tmp_path, on_event=on_event)
+    run = await worker.submit("u1", "t")
+    final = await worker.execute(run.id)
+    assert final.stop_reason == StopReason.DONE
+    assert len(inner) == 1 and not inner[0].is_finished
+    assert [e.type for e in store.events] == ["run_started", "model_call", "finished"]
+
+
+async def test_raising_on_event_does_not_kill_the_run(tmp_path: Path) -> None:
+    async def on_event(ev: Event) -> None:
+        raise RuntimeError("subscriber down")
+
+    worker, store, _, _ = make_worker([reply("Hazır.")], tmp_path, on_event=on_event)
+    final = await worker.execute((await worker.submit("u1", "t")).id)
+    assert final.stop_reason == StopReason.DONE
+    assert [e.type for e in store.events] == ["run_started", "model_call", "finished"]
+
+
+async def test_recover_isolates_a_failing_run(tmp_path: Path) -> None:
+    worker, store, _, ctx = make_worker([reply("hazır")], tmp_path)
+    first = await worker.submit("u1", "a")
+    second = await worker.submit("u1", "b")
+    real = OwnEngine(BUDGET)
+
+    class Flaky:
+        def run(self, run: RunState, c):
+            if run.id == first.id:
+                raise RuntimeError("boom")
+            return real.run(run, c)
+
+    worker._engine = Flaky()  # noqa: SLF001
+    ids = await worker.recover()
+    assert set(ids) == {first.id, second.id}
+    assert (await store.load(second.id)).stop_reason == StopReason.DONE
+    assert not (await store.load(first.id)).is_finished
