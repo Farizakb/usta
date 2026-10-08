@@ -13,7 +13,7 @@ C. Core uses Usta message types. Adapters: `anthropic` (production), `litellm` (
 
 ## Consequences
 LiteLLM controls: exact pin + hash lock, imported only by its adapter (import-linter), adapter gets only its own key, Dependabot. Round-trip contract test per adapter incl. cache tokens.
-Pinned litellm==1.102.1 on 2026-10-08 (hash-locked in uv.lock).
+Pinned litellm==1.102.2 on 2026-10-08 (hash-locked in uv.lock). 1.102.0-1.102.1 and 1.101.0-1.101.2 skipped: GHSA-7hp6-4w63-5g45 (proxy-only).
 
 ## Revisit when
 Usta serves a team (consider LiteLLM proxy) or LiteLLM loses cache/usage fidelity.
