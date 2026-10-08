@@ -14,6 +14,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # no network fetc
 
 import litellm  # noqa: E402
 
+from usta.core.errors import ConfigError  # noqa: E402
 from usta.core.messages import Message, TextBlock, ToolCall  # noqa: E402
 from usta.core.model import (  # noqa: E402
     ModelCaps,
@@ -26,6 +27,7 @@ from usta.core.model import (  # noqa: E402
 from usta.models.errors import map_status  # noqa: E402
 from usta.models.toolnames import decode, encode  # noqa: E402
 
+_NO_KEY = "no-key"  # placeholder so litellm never falls back to env provider keys
 Completion = Callable[..., Awaitable[Any]]
 _STOP: dict[str | None, ModelStop] = {
     "stop": "end_turn",
@@ -47,10 +49,12 @@ class LiteLLMModel:
         effort: str | None = None,
         completion: Completion | None = None,
     ) -> None:
+        if not api_key and api_base is None:
+            raise ConfigError(f"{model_id}: api_key is required (env keys are never consulted)")
         self.model_id = model_id
         self.caps = caps
         self.provider = "litellm:" + model_id.split("/", 1)[0]
-        self._api_key = api_key
+        self._api_key = api_key or _NO_KEY
         self._api_base = api_base
         self._max_output = max_output_tokens
         self._effort = effort
@@ -61,9 +65,9 @@ class LiteLLMModel:
             "model": self.model_id,
             "messages": _messages(req),
             "max_tokens": req.max_output_tokens or self._max_output,
+            "api_key": self._api_key,
+            "num_retries": 0,  # no hidden retries (P8): the gateway owns retry policy
         }
-        if self._api_key:
-            kwargs["api_key"] = self._api_key
         if self._api_base:
             kwargs["api_base"] = self._api_base
         if self._effort:

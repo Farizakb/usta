@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from tests.models.contract import CONTRACT_REQUEST, assert_contract_response
-from usta.core.errors import ProviderError, ProviderRateLimited, TransientProviderError
+from usta.core.errors import ConfigError, ProviderError, ProviderRateLimited, TransientProviderError
 from usta.core.messages import Message, ToolResult
 from usta.models.fake import DEFAULT_CAPS
 from usta.models.litellm_adapter import LiteLLMModel
@@ -153,3 +153,29 @@ async def test_provider_errors_are_mapped(status: int, error: type) -> None:
 async def test_our_own_bugs_are_not_disguised_as_provider_errors() -> None:
     with pytest.raises(TypeError):
         await make(FakeCompletion(error=TypeError("bug"))).complete(CONTRACT_REQUEST)
+
+
+async def test_retries_are_disabled() -> None:
+    fake = FakeCompletion(WIRE)
+    await make(fake).complete(CONTRACT_REQUEST)
+    assert fake.kwargs["num_retries"] == 0
+
+
+def test_no_key_and_no_api_base_is_a_config_error() -> None:
+    with pytest.raises(ConfigError):
+        LiteLLMModel("gemini/x", DEFAULT_CAPS, api_key=None, max_output_tokens=512)
+
+
+async def test_no_key_with_api_base_uses_placeholder_key() -> None:
+    fake = FakeCompletion(WIRE)
+    model = LiteLLMModel(
+        "ollama/x",
+        DEFAULT_CAPS,
+        api_key=None,
+        max_output_tokens=512,
+        api_base="http://localhost:11434",
+        completion=fake,
+    )
+    await model.complete(CONTRACT_REQUEST)
+    assert fake.kwargs["api_key"] == "no-key"
+    assert fake.kwargs["api_base"] == "http://localhost:11434"
