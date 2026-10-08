@@ -4008,6 +4008,13 @@ Audit tables use app-generated UUIDs, so the app role never needs sequence grant
 8. `model_calls.request` stores the full request in M0; revisit size at M3 with real numbers.
 9. Every checkpoint writes the `run_checkpoints` row and updates the `runs` summary in one transaction (Task 12 rule).
 
+**Schema decisions (grilling round 2, approved by Fariz 2026-10-08):**
+10. Keep every per-step `run_checkpoints` row in M0; pruning is an M3 concern.
+11. Replace the plain `runs (status)` index with a partial index `ON runs (status) WHERE status <> 'finished'` (what `recover` scans).
+12. Migrations run as the owner role. `usta_app` gets `SELECT, INSERT, UPDATE` on `users`, `runs`, `run_checkpoints` (no `DELETE`); `SELECT, INSERT` only on audit tables.
+13. `usta_purge` gets `SELECT, DELETE` on `runs` (cascades to checkpoints) and on the audit tables. The `usta purge` CLI stays deferred (Plan Decision 15).
+14. `usta_app` / `usta_purge` are `NOLOGIN` group roles created by the migration. Dev login users that are members of them are created in `deploy/postgres/init.sql`, with dev-only passwords in `.env.example`; prod creates its own.
+
 - [ ] **Step 0: STOP. Show Fariz the schema table above and get explicit approval** (or changes) before writing the migration. If anything changes, update this table first.
 
 - [ ] **Step 1: Write the fixtures and the failing test.** `tests/conftest.py`:
