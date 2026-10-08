@@ -553,7 +553,7 @@ Runs in Usta **after the engine reports done**, identical for both engines.
 
 ## 20. Open items (resolved during build, not design)
 
-1. gVisor-in-WSL2 spike result (M0 day 1).
+1. gVisor-in-WSL2 spike result (M0 day 1). **Result: failed 2026-10-08 (ADR-005): `runsc` sandbox crashes at start under WSL2; gVisor on VM only.**
 2. Free-tier model for `dev-free` (pick the best tool-calling model available on a free tier at M0).
 3. Measured cost per task → recalibrate run budget (after M3).
 4. Tavily vs Brave on 30 Azerbaijani queries (M2; cut-able).
