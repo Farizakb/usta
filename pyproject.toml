@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.14,<2",
+    "anthropic>=1,<2",
     "asyncpg>=0.30,<1",
     "jsonschema>=4.23,<5",
     "pydantic>=2.9,<3",
@@ -79,4 +80,3 @@ source_modules = ["usta"]
 forbidden_modules = ["anthropic"]
 allow_indirect_imports = true
 ignore_imports = ["usta.models.anthropic_adapter -> anthropic"]
-unmatched_ignore_imports_alerting = "none"  # adapter arrives in a later task
