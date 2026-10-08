@@ -1,0 +1,41 @@
+# Model catalog: capabilities (ADR-021) + prices in USD per million tokens (P7).
+# A profile may only use models listed here; no price entry -> startup refuses.
+# Anthropic prices checked 2026-10-08 (first-party API). cache_write = 5-minute TTL (1.25x input).
+
+[models."claude-sonnet-5-5"]
+adapter = "anthropic"
+context_tokens = 1_000_000
+max_output_tokens = 128_000
+prompt_cache = "explicit"
+parallel_tool_calls = true
+native_tools = true
+price = { input = 2.00, output = 10.00, cache_read = 0.20, cache_write = 2.50 }
+
+[models."claude-haiku-4-5"]
+adapter = "anthropic"
+context_tokens = 200_000
+max_output_tokens = 64_000
+prompt_cache = "explicit"
+parallel_tool_calls = true
+native_tools = true
+price = { input = 1.00, output = 5.00, cache_read = 0.10, cache_write = 1.25 }
+
+# dev-free default (SPEC §20 item 2; re-checked in Task 15). Free tier in dev, but the
+# paid list price is kept so cost numbers stay comparable across profiles.
+[models."gemini/gemini-2.5-flash"]
+adapter = "litellm"
+context_tokens = 1_048_576
+max_output_tokens = 65_536
+prompt_cache = "automatic"
+parallel_tool_calls = true
+native_tools = true
+price = { input = 0.30, output = 2.50, cache_read = 0.03, cache_write = 0.0 }
+
+[models."fake-model"]
+adapter = "fake"
+context_tokens = 200_000
+max_output_tokens = 8_192
+prompt_cache = "none"
+parallel_tool_calls = true
+native_tools = true
+price = { input = 0.0, output = 0.0, cache_read = 0.0, cache_write = 0.0 }
