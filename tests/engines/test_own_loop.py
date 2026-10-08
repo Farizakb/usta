@@ -165,3 +165,25 @@ async def test_resume_executes_tool_calls_left_without_results(tmp_path: Path) -
         sent.tool_results()[0].call_id == "c9"
         and sent.tool_results()[0].content == "echo: yarımçıq"
     )
+
+
+async def test_truncated_turn_is_never_checkpointed_as_running(tmp_path: Path) -> None:
+    # A crash between record() and finish must not leave a running run whose last
+    # message holds refused/truncated tool calls: resume would execute them.
+    for stop in ("refusal", "max_tokens"):
+        truncated = call("test.echo", {"text": "x"}).model_copy(update={"stop": stop})
+        run, _, _, store = await drive([truncated], tmp_path)
+        after_model = [cp for cp in store.checkpoints["r1"] if len(cp["messages"]) > 1]
+        assert after_model and all(cp["status"] == "finished" for cp in after_model)
+        assert run.stop_reason == StopReason.ERROR and stop in (run.stop_detail or "").replace(
+            "refused", "refusal"
+        )
+
+
+async def test_tool_audit_sink_records_executed_calls(tmp_path: Path) -> None:
+    # Positive control: store.tool_calls is the pipeline's audit sink, so `== []` above is meaningful.
+    _, _, _, store = await drive([call("test.echo", {"text": "a"}), reply("ok")], tmp_path)
+    assert [(r.tool, r.phase) for r in store.tool_calls] == [
+        ("test.echo", "intent"),
+        ("test.echo", "done"),
+    ]

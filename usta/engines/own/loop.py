@@ -97,7 +97,14 @@ class OwnEngine:
                 resp = await ctx.models.complete(build_request(run, ctx.tools.specs()))
                 run.record(resp)
                 timer.tick()
-                await ctx.store.checkpoint(run)
+                # Refused/truncated turns must not be checkpointed as running: a crash then
+                # would make resume execute their (incomplete) tool calls. _finish checkpoints.
+                bad_stop = {
+                    "refusal": "model refused the request",
+                    "max_tokens": "model output hit max_tokens before finishing",
+                }.get(resp.stop)
+                if bad_stop is None:
+                    await ctx.store.checkpoint(run)
                 yield Event(
                     run_id=run.id,
                     type="model_call",
@@ -109,14 +116,8 @@ class OwnEngine:
                         "usage": resp.usage.model_dump(),
                     },
                 )
-                if resp.stop == "refusal":
-                    yield await self._finish(
-                        run, ctx, timer, StopReason.ERROR, "model refused the request"
-                    )
-                    return
-                if resp.stop == "max_tokens":
-                    detail = "model output hit max_tokens before finishing"
-                    yield await self._finish(run, ctx, timer, StopReason.ERROR, detail)
+                if bad_stop is not None:
+                    yield await self._finish(run, ctx, timer, StopReason.ERROR, bad_stop)
                     return
                 calls = resp.tool_calls()
                 if not calls:
