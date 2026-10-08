@@ -97,7 +97,19 @@ async def _main(args: argparse.Namespace, settings: Settings, app_factory: AppFa
             case "answer":
                 run = await app.worker.answer_budget(args.run_id, args.decision == "yes")
             case "cancel":
+                was_finished = (await app.store.load(args.run_id)).is_finished
                 run = await app.worker.cancel(args.run_id)
+                if was_finished:
+                    return _exit_code(run)
+                if run.is_finished and run.stop_reason == StopReason.CANCELLED:
+                    print("cancelled")
+                    return 0
+                if (
+                    not run.is_finished
+                ):  # running: only the flag is set; the loop stops at its next step
+                    print("cancel requested")
+                    return 0
+                return _exit_code(run)
             case _:
                 raise UstaError(f"unknown command {args.command}")
         return _exit_code(run)
