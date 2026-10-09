@@ -65,7 +65,7 @@ type = "layers"
 layers = [
     "usta.cli",
     "usta.app",
-    "usta.engines | usta.models | usta.tools | usta.store | usta.worker",
+    "usta.engines | usta.models | usta.tools | usta.store | usta.worker | usta.sandbox",
     "usta.lang",
     "usta.ports",
     "usta.core",
