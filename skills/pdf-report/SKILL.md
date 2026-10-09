@@ -23,6 +23,7 @@ build_pdf("/out/hesabat.pdf", "Yanacaq sərfiyyatı hesabatı", [
 ```
 
 - `fmt_number(1234.5)` → `1.234,50`, `fmt_azn(73.1)` → `73,10 AZN`, `fmt_date(date)` → `9 okt 2026` (Babel, `az` locale).
+- Write currency as `AZN`, never the `₼` sign: the PDF font has no glyph for it and it would vanish.
 - Write the report in the user's language. Use short headings and a summary first.
 - Save under `/out` with a descriptive file name in the user's language, e.g. `/out/uygunsuzluqlar_hesabati.pdf`.
 - After the run, the verifier runs `/skills/pdf-report/check.py` on every PDF in `/out`.
