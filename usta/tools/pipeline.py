@@ -17,6 +17,7 @@ from usta.core.messages import ToolCall, ToolResult
 from usta.core.model import ToolSpec
 from usta.core.run import RunState
 from usta.core.tools import ToolOutcome
+from usta.core.workspace import RunDirs
 from usta.ports import AuditSink
 from usta.tools.registry import ToolContext, ToolOutput, ToolRegistry
 
@@ -77,10 +78,8 @@ class ToolPipeline:
         )
 
     def _context(self, run: RunState) -> ToolContext:
-        user_dir = self._root / run.user_id
-        return ToolContext(
-            run=run, files_dir=user_dir / "files", out_dir=user_dir / "runs" / run.id / "out"
-        )
+        dirs = RunDirs.of(self._root, run.user_id, run.id)
+        return ToolContext(run=run, files_dir=dirs.files, out_dir=dirs.out)
 
     async def _reject(self, call: ToolCall, run: RunState, message: str) -> ToolOutcome:
         await self._audit.tool_call(self._record(call, run, "done", message, True, 0))

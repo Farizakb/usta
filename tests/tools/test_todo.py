@@ -31,5 +31,11 @@ async def test_todo_rejects_unknown_status(tmp_path: Path) -> None:
     assert out.result.is_error and run.todo == []
 
 
-def test_builtin_tools_are_file_read_and_todo() -> None:
-    assert sorted(t.name for t in builtin_tools()) == ["file.read", "todo"]
+def test_builtin_tools() -> None:
+    assert [t.name for t in builtin_tools()] == [
+        "file.list",
+        "file.read",
+        "file.search",
+        "file.write",
+        "todo",
+    ]
