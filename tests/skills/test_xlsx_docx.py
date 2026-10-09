@@ -64,3 +64,32 @@ async def test_empty_docx_fails(box: Box) -> None:
     ).exit_code == 0
     result = await box.check("docx", "bos.docx")
     assert not result["ok"] and any("no text" in r for r in result["reasons"])
+
+
+async def test_header_only_workbook_fails(box: Box) -> None:
+    code = (
+        "from openpyxl import Workbook\n"
+        "wb = Workbook(); wb.active.append(['Anbar', 'Qalıq']); wb.save('/out/basliq.xlsx')\n"
+    )
+    assert (await box.run(code)).exit_code == 0
+    result = await box.check("xlsx", "basliq.xlsx")
+    assert not result["ok"] and any("no data rows" in r for r in result["reasons"])
+
+
+async def test_corrupt_sheet_xml_keeps_json_contract(box: Box) -> None:
+    code = (
+        "import zipfile\n"
+        "from openpyxl import Workbook\n"
+        "wb = Workbook(); wb.active.append(['Anbar', 'Qalıq']); wb.active.append(['Gəncə', 1])\n"
+        "wb.save('/tmp/good.xlsx')\n"
+        "with zipfile.ZipFile('/tmp/good.xlsx') as src, "
+        "zipfile.ZipFile('/out/sinig.xlsx', 'w') as dst:\n"
+        "    for item in src.infolist():\n"
+        "        data = src.read(item.filename)\n"
+        "        if item.filename == 'xl/worksheets/sheet1.xml':\n"
+        "            data = data[: len(data) // 2]\n"
+        "        dst.writestr(item, data)\n"
+    )
+    assert (await box.run(code)).exit_code == 0
+    result = await box.check("xlsx", "sinig.xlsx")
+    assert not result["ok"] and result["reasons"][0].startswith("cannot read workbook")

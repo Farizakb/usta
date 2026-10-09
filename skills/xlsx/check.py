@@ -15,28 +15,38 @@ def emit(ok: bool, reasons: list[str], sample: str) -> None:
 def check(path: str) -> None:
     from openpyxl import load_workbook
 
-    try:
-        wb = load_workbook(path, read_only=True)
-    except Exception as e:
-        emit(False, [f"cannot open workbook: {type(e).__name__}: {e}"], "")
-        return
     reasons: list[str] = []
     texts: list[str] = []
     values = 0
-    for ws in wb.worksheets:
-        for row in ws.iter_rows(values_only=True):
-            for v in row:
-                if v is None or v == "":
-                    continue
-                values += 1
-                if isinstance(v, str):
-                    if v.strip().upper() in ERRORS:
-                        reasons.append(f"sheet {ws.title!r} has an error value {v.strip()}")
-                    elif not v.startswith("="):
-                        texts.append(v)
-    wb.close()
+    data_rows = 0
+    try:
+        wb = load_workbook(path, read_only=True)
+        try:
+            for ws in wb.worksheets:
+                seen_header = False
+                for row in ws.iter_rows(values_only=True):
+                    row_values = [v for v in row if v is not None and v != ""]
+                    if not row_values:
+                        continue
+                    if seen_header:
+                        data_rows += 1
+                    seen_header = True
+                    for v in row_values:
+                        values += 1
+                        if isinstance(v, str):
+                            if v.strip().upper() in ERRORS:
+                                reasons.append(f"sheet {ws.title!r} has an error value {v.strip()}")
+                            elif not v.startswith("="):
+                                texts.append(v)
+        finally:
+            wb.close()
+    except Exception as e:
+        emit(False, [f"cannot read workbook: {type(e).__name__}: {e}"], "")
+        return
     if values == 0:
         reasons.append("workbook has no data")
+    elif data_rows == 0:
+        reasons.append("workbook has no data rows (only header rows)")
     text = " | ".join(texts)
     if "�" in text or "\x00" in text:
         reasons.append("text contains U+FFFD or NUL characters (broken encoding)")

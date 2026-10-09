@@ -16,13 +16,13 @@ def check(path: str) -> None:
 
     try:
         doc = Document(path)
+        texts = [p.text for p in doc.paragraphs if p.text.strip()]
+        for table in doc.tables:
+            for row in table.rows:
+                texts.extend(c.text for c in row.cells if c.text.strip())
     except Exception as e:
         emit(False, [f"cannot open document: {type(e).__name__}: {e}"], "")
         return
-    texts = [p.text for p in doc.paragraphs if p.text.strip()]
-    for table in doc.tables:
-        for row in table.rows:
-            texts.extend(c.text for c in row.cells if c.text.strip())
     text = "\n".join(texts)
     reasons = []
     if not text.strip():
