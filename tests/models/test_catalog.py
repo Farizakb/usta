@@ -22,6 +22,7 @@ def test_shipped_catalog_has_caps_and_price_for_every_model() -> None:
         "claude-sonnet-5-5",
         "claude-haiku-4-5",
         "gemini/gemini-2.5-flash",
+        "openai/gpt-6-luna",
         "fake-model",
     } <= catalog.keys()
     sonnet = catalog["claude-sonnet-5-5"]

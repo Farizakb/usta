@@ -19,3 +19,6 @@ P4 guard (`ANTHROPIC_API_KEY` unset for `dev-sub`). Engine comparison uses token
 
 ## Revisit when
 Budget increases or Pro credit terms change.
+
+## Update 2026-10-09: chosen dev own-loop model
+The dev own-loop model is `openai/gpt-6-luna` through LiteLLM (profile `dev-openai`), a user decision. OpenAI API data is not used for training by default; cost is about $0.01 per smoke. `dev-free` (Gemini free tier, $0) remains available. The rest of this decision is unchanged.

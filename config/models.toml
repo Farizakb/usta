@@ -31,6 +31,17 @@ parallel_tool_calls = true
 native_tools = true
 price = { input = 0.30, output = 2.50, cache_read = 0.03, cache_write = 0.0 }
 
+# Dev own-loop model (user decision 2026-10-09). OpenAI caching is automatic.
+# OpenAI prices checked 2026-10-09 (developers.openai.com/api/docs/pricing)
+[models."openai/gpt-6-luna"]
+adapter = "litellm"
+context_tokens = 1_050_000
+max_output_tokens = 128_000
+prompt_cache = "automatic"
+parallel_tool_calls = true
+native_tools = true
+price = { input = 0.10, output = 0.50, cache_read = 0.01, cache_write = 0.125 }
+
 [models."fake-model"]
 adapter = "fake"
 context_tokens = 200_000

@@ -16,6 +16,7 @@ CATALOG = load_catalog(CONFIG / "models.toml")
     [
         ("test", {}),
         ("dev-free", {"GEMINI_API_KEY": "k"}),
+        ("dev-openai", {"OPENAI_API_KEY": "k"}),
         ("dev-api", {"ANTHROPIC_API_KEY": "k"}),
         ("dev-sub", {}),
         ("prod", {"ANTHROPIC_API_KEY": "k"}),
