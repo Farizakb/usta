@@ -80,14 +80,16 @@ async def test_corrupt_sheet_xml_keeps_json_contract(box: Box) -> None:
     code = (
         "import zipfile\n"
         "from openpyxl import Workbook\n"
-        "wb = Workbook(); wb.active.append(['Anbar', 'Qalıq']); wb.active.append(['Gəncə', 1])\n"
+        "wb = Workbook(); wb.active.append(['Anbar', 'Qalıq'])\n"
+        "for i in range(200): wb.active.append([f'Gəncə {i}', i])\n"
         "wb.save('/tmp/good.xlsx')\n"
         "with zipfile.ZipFile('/tmp/good.xlsx') as src, "
         "zipfile.ZipFile('/out/sinig.xlsx', 'w') as dst:\n"
         "    for item in src.infolist():\n"
         "        data = src.read(item.filename)\n"
         "        if item.filename == 'xl/worksheets/sheet1.xml':\n"
-        "            data = data[: len(data) // 2]\n"
+        # cut only the closing tags: load_workbook succeeds, rows fail mid-iteration
+        "            data = data[:-60]\n"
         "        dst.writestr(item, data)\n"
     )
     assert (await box.run(code)).exit_code == 0
