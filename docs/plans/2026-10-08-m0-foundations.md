@@ -5736,4 +5736,16 @@ git tag m0 && git push origin m0
 - gVisor in WSL2 works only on runsc platforms `kvm`/`ptrace` (default `systrap` fails; ADR-005). The production VM's platform is checked at VM setup. M0 uses no sandbox.
 - LiteLLM adapter: provider-specific fields such as Gemini thought signatures are not preserved unless Task 15 forces it.
 - ⚠️ Preserved-thinking enforcement on Sonnet/Opus 5.5 conflicts with history-editing context layers. Revisit ADR-017 before M3 (Plan Decision 5).
+- CI: gitleaks-action needs a `GITLEAKS_LICENSE` secret if the repo moves into a GitHub organization.
+- Cross-provider resume: the Anthropic `_message` drops foreign blocks, and a parked run can resume under a different profile (`runs.profile` is not checked on resume).
+- LiteLLM adapter: `tc["id"]` / `fn["name"]` are hard-indexed and non-str/dict arguments raise TypeError. The run ends `error` with the billed call logged at $0 (P7 undercount); matters for `dev-free` / Gemini.
+- A `_log` failure on the gateway success path loses the response, and a billed call without a `model_calls` row undercounts P7 and monthly totals when the DB fails mid-call.
+- `file.read` has a check-then-read TOCTOU (no `O_NOFOLLOW`). Fix it together with `file.write` in M1.
+- `file.read` loads the whole file before truncating to 50k characters.
+- `CancelledError` during a tool call leaves an `intent` row without `done`. Fix before M2 turns that into `unknown_outcome`.
+- Tool results are appended only after the whole batch (Plan Decision 7), so a crash re-executes every call in the batch. This blocks `external_write` in M2.
+- `CancelledError` / Ctrl-C leaves the run `running`, and `usta recover` resumes it (ADR-014 rule 3); a user who pressed Ctrl-C may have meant cancel.
+- Cancelling an `UNKNOWN_OUTCOME` run discards the side-effect marker (matters from M2).
+- A crashed run's cancel is honoured only via `recover`, and pending tool calls run before the cancel check (matters for M2 `external_write`).
+- LiteLLM's "Provider List" banner reaches the CLI on every dev run; `litellm.suppress_debug_info = True` silences it.
 
