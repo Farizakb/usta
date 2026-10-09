@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from usta.tools.builtin.files import (
     FILE_WRITE,
     MAX_CHARS,
     MAX_HITS,
+    _open_under,
 )
 from usta.tools.registry import ToolContext
 
@@ -164,3 +166,91 @@ async def test_undecodable_file_error_suggests_code_exec(ctx: ToolContext) -> No
     )
     with pytest.raises(ToolInputError, match="code_exec"):
         await FILE_READ.fn({"path": "files/cp.txt"}, ctx)
+
+
+@pytest.mark.parametrize("path", ["out", "out/", "out/."])
+@pytest.mark.parametrize("removed", [False, True])
+async def test_write_refuses_the_out_root(ctx: ToolContext, path: str, removed: bool) -> None:
+    if removed:
+        ctx.out_dir.rmdir()
+    with pytest.raises(ToolInputError):
+        await FILE_WRITE.fn({"path": path, "content": "x"}, ctx)
+    assert not ctx.out_dir.is_file()
+
+
+async def test_write_refuses_a_symlink_inside_out(ctx: ToolContext) -> None:
+    (ctx.out_dir / "real.txt").write_text("keep", encoding="utf-8")
+    os.symlink(ctx.out_dir / "real.txt", ctx.out_dir / "inlink")
+    with pytest.raises(ToolInputError):
+        await FILE_WRITE.fn({"path": "out/inlink", "content": "pwned"}, ctx)
+    assert (ctx.out_dir / "real.txt").read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.parametrize("path", ["out/../files/x.txt", "out/../../u2/x"])
+async def test_write_refuses_traversal_out_of_out(ctx: ToolContext, path: str) -> None:
+    with pytest.raises(ToolInputError):
+        await FILE_WRITE.fn({"path": path, "content": "x"}, ctx)
+
+
+async def test_write_under_a_regular_file_is_a_clean_error(ctx: ToolContext) -> None:
+    (ctx.out_dir / "f").write_text("x", encoding="utf-8")
+    with pytest.raises(ToolInputError, match="cannot write"):
+        await FILE_WRITE.fn({"path": "out/f/g.txt", "content": "x"}, ctx)
+
+
+async def test_open_under_refuses_a_directory_swapped_for_a_symlink(
+    ctx: ToolContext, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "x.txt").write_text("secret", encoding="utf-8")
+    os.symlink(outside, ctx.files_dir / "d")
+    with pytest.raises(OSError):
+        os.close(_open_under(ctx.files_dir, ctx.files_dir / "d" / "x.txt", os.O_RDONLY))
+
+
+async def test_open_under_write_does_not_create_outside_a_swapped_directory(
+    ctx: ToolContext, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    os.symlink(outside, ctx.out_dir / "d")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    with pytest.raises(OSError):
+        os.close(_open_under(ctx.out_dir, ctx.out_dir / "d" / "new.txt", flags, make_dirs=True))
+    assert list(outside.iterdir()) == []
+
+
+async def test_list_does_not_follow_symlinks_out_of_the_workspace(
+    ctx: ToolContext, tmp_path: Path
+) -> None:
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "hidden.txt").write_text("OUTSIDE_SECRET", encoding="utf-8")
+    outside_file = tmp_path / "ofile.txt"
+    outside_file.write_text("OUTSIDE_SECRET", encoding="utf-8")
+    os.symlink(outside_file, ctx.files_dir / "link.txt")
+    os.symlink(outside_dir, ctx.files_dir / "linkdir")
+    out = (await FILE_LIST.fn({"path": "files", "recursive": True}, ctx)).content
+    assert "files/link.txt" in out
+    assert "files/linkdir/" in out
+    assert "hidden.txt" not in out
+
+
+async def test_search_does_not_report_a_symlinked_outside_file(
+    ctx: ToolContext, tmp_path: Path
+) -> None:
+    (ctx.files_dir / "ok.txt").write_text("needle here\n", encoding="utf-8")
+    outside_file = tmp_path / "ofile.txt"
+    outside_file.write_text("needle OUTSIDE\n", encoding="utf-8")
+    os.symlink(outside_file, ctx.files_dir / "link.txt")
+    out = (await FILE_SEARCH.fn({"query": "needle"}, ctx)).content
+    assert "files/ok.txt:1" in out
+    assert "link.txt" not in out
+    assert "OUTSIDE" not in out
+
+
+async def test_read_of_a_fifo_is_refused_without_hanging(ctx: ToolContext) -> None:
+    os.mkfifo(ctx.files_dir / "pipe")
+    with pytest.raises(ToolInputError):
+        await asyncio.wait_for(FILE_READ.fn({"path": "files/pipe"}, ctx), timeout=5)

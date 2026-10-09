@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import stat
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -20,8 +21,10 @@ MAX_WRITE_CHARS = 1_000_000
 _LINE_CHARS = 200
 
 
-def resolve(path: str, ctx: ToolContext, roots: tuple[str, ...] = ("files", "out")) -> Path:
-    """Map 'files/...' or 'out/...' to a real path inside the user's workspace; refuse escapes."""
+def resolve_in(
+    path: str, ctx: ToolContext, roots: tuple[str, ...] = ("files", "out")
+) -> tuple[Path, Path]:
+    """(resolved root, resolved target) for 'files/...' or 'out/...'; refuses escapes."""
     if "\x00" in path:
         raise ToolInputError(f"path contains a NUL byte: {path!r}")
     rel = PurePosixPath(path)
@@ -33,7 +36,11 @@ def resolve(path: str, ctx: ToolContext, roots: tuple[str, ...] = ("files", "out
     target = root.joinpath(*rel.parts[1:]).resolve()  # resolves symlinks
     if not target.is_relative_to(root):
         raise ToolInputError(f"path escapes the workspace: {path!r}")
-    return target
+    return root, target
+
+
+def resolve(path: str, ctx: ToolContext, roots: tuple[str, ...] = ("files", "out")) -> Path:
+    return resolve_in(path, ctx, roots)[1]
 
 
 def _display(target: Path, ctx: ToolContext) -> str:
@@ -46,13 +53,38 @@ def _display(target: Path, ctx: ToolContext) -> str:
     raise ToolInputError(f"path escapes the workspace: {target}")
 
 
-def _read_nofollow(target: Path) -> bytes:
-    """Open without following a symlink swapped in after resolve() (M0 TOCTOU limitation)."""
+def _open_under(root: Path, target: Path, flags: int, *, make_dirs: bool = False) -> int:
+    """Open `target` (checked by resolve_in to be under `root`) by walking from `root` one
+    component at a time with O_NOFOLLOW. out/ is mounted read-write into the sandbox, so a
+    directory swapped for a symlink after resolve_in() must not redirect the open outside
+    the workspace. Raises OSError; callers turn it into ToolInputError."""
+    parts = target.relative_to(root).parts
+    if not parts:
+        raise IsADirectoryError(21, "is the folder root, not a file")
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+        for name in parts[:-1]:
+            if make_dirs:
+                try:
+                    os.mkdir(name, 0o755, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            nxt = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return os.open(parts[-1], flags | os.O_NOFOLLOW, 0o644, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
+def _read_under(root: Path, target: Path, shown: str) -> bytes:
+    try:
+        fd = _open_under(root, target, os.O_RDONLY | os.O_NONBLOCK)
     except OSError as e:
-        raise ToolInputError(f"cannot open {target.name!r}: {e.strerror}") from e
+        raise ToolInputError(f"cannot open {shown!r}: {e.strerror}") from e
     with os.fdopen(fd, "rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            raise ToolInputError(f"not a regular file: {shown!r}")
         return f.read()
 
 
@@ -75,10 +107,11 @@ def _decode(data: bytes, path: str) -> str:
 
 
 async def _read(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
-    target = resolve(args["path"], ctx)
+    root, target = resolve_in(args["path"], ctx)
     if not target.is_file():
         raise ToolInputError(f"not a file: {args['path']!r}")
-    text = _decode(await asyncio.to_thread(_read_nofollow, target), args["path"])
+    data = await asyncio.to_thread(_read_under, root, target, args["path"])
+    text = _decode(data, args["path"])
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS] + f"\n[truncated: showing {MAX_CHARS} of {len(text)} characters]"
     return ToolOutput(text)
@@ -116,7 +149,7 @@ async def _list_tool(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     return ToolOutput(await asyncio.to_thread(_list, target, ctx, args.get("recursive", False)))
 
 
-def _search(target: Path, ctx: ToolContext, query: str) -> str:
+def _search(root: Path, target: Path, ctx: ToolContext, query: str) -> str:
     needle = az_casefold(query)
     hits: list[str] = []
     scanned = skipped = 0
@@ -128,16 +161,16 @@ def _search(target: Path, ctx: ToolContext, query: str) -> str:
     for f in files:
         if f.is_symlink() or not f.is_file():
             continue
-        if f.stat().st_size > MAX_SEARCH_BYTES:
-            skipped += 1
-            continue
+        shown = _display(f, ctx)
         try:
-            text = _decode(f.read_bytes(), f.name)
-        except ToolInputError:
+            if f.stat().st_size > MAX_SEARCH_BYTES:
+                skipped += 1
+                continue
+            text = _decode(_read_under(root, f, shown), f.name)
+        except (OSError, ToolInputError):
             skipped += 1
             continue
         scanned += 1
-        shown = _display(f.resolve(), ctx)
         for n, line in enumerate(text.splitlines(), start=1):
             if needle in az_casefold(line):
                 hits.append(f"{shown}:{n}: {line.strip()[:_LINE_CHARS]}")
@@ -150,21 +183,26 @@ def _search(target: Path, ctx: ToolContext, query: str) -> str:
 
 
 async def _search_tool(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
-    target = resolve(args.get("path", "files"), ctx)
+    root, target = resolve_in(args.get("path", "files"), ctx)
     if not target.exists():
         return ToolOutput("0 matches (path does not exist)")
-    return ToolOutput(await asyncio.to_thread(_search, target, ctx, args["query"]))
+    return ToolOutput(await asyncio.to_thread(_search, root, target, ctx, args["query"]))
 
 
-def _write(target: Path, content: str) -> int:
-    target.parent.mkdir(parents=True, exist_ok=True)
+def _write(root: Path, target: Path, path: str, content: str) -> int:
     data = content.encode("utf-8")
     try:
-        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+        root.mkdir(parents=True, exist_ok=True)  # the run's own out/ dir
+        fd = _open_under(
+            root,
+            target,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NONBLOCK,
+            make_dirs=True,
+        )
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
     except OSError as e:
-        raise ToolInputError(f"cannot write {target.name!r}: {e.strerror}") from e
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
+        raise ToolInputError(f"cannot write {path!r}: {e.strerror}") from e
     return len(data)
 
 
@@ -173,10 +211,10 @@ async def _write_tool(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     raw = ctx.out_dir / PurePosixPath(path).relative_to("out") if path.startswith("out/") else None
     if raw is not None and raw.is_symlink():
         raise ToolInputError(f"refusing to write through a symlink: {path!r}")
-    target = resolve(path, ctx, roots=("out",))
-    if target.is_dir():
-        raise ToolInputError(f"is a directory: {path!r}")
-    size = await asyncio.to_thread(_write, target, args["content"])
+    root, target = resolve_in(path, ctx, roots=("out",))
+    if target == root:
+        raise ToolInputError("out/ is a folder; give a file path like out/summary.md")
+    size = await asyncio.to_thread(_write, root, target, path, args["content"])
     return ToolOutput(f"wrote {_display(target, ctx)} ({size} bytes)")
 
 
