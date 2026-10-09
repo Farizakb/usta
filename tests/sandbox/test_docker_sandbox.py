@@ -76,3 +76,27 @@ async def test_preflight_ok_then_reports_missing_image_and_runtime(sandbox_confi
 async def test_preflight_refuses_runc_posing_as_gvisor(sandbox_config) -> None:
     problems = await DockerSandbox(replace(sandbox_config, runtime="runc", gvisor=True)).preflight()
     assert any("not gVisor" in p for p in problems)
+
+
+async def _client_pids(box: Box) -> list[str]:
+    proc = await asyncio.create_subprocess_exec(
+        "pgrep", "-f", f"docker exec.*{container_name(box.run_id)}",
+        stdout=asyncio.subprocess.PIPE,
+    )  # fmt: skip
+    return (await proc.communicate())[0].decode().split()
+
+
+async def test_cancel_kills_the_docker_exec_client(box: Box) -> None:
+    await box.run("print(1)")  # container exists
+    task = asyncio.create_task(box.run("import time; time.sleep(30)"))
+    await asyncio.sleep(1.5)
+    assert await _client_pids(box)  # the client is running
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 5)
+    assert await _client_pids(box) == []
+
+
+async def test_concurrent_execs_on_one_run_both_succeed(box: Box) -> None:
+    a, b = await asyncio.gather(box.run("print('a')"), box.run("print('b')"))
+    assert (a.exit_code, a.stdout, b.exit_code, b.stdout) == (0, "a\n", 0, "b\n")

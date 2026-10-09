@@ -93,6 +93,7 @@ class DockerSandbox:
         self._cfg = cfg
         self._docker = docker
         self._started: set[str] = set()
+        self._locks: dict[str, asyncio.Lock] = {}
 
     def run_args(self, run_id: str, dirs: RunDirs) -> list[str]:
         c = self._cfg
@@ -162,14 +163,16 @@ class DockerSandbox:
         stdin: str = "",
         timeout_s: float = 60.0,
     ) -> ExecResult:
-        for attempt in (1, 2):
-            await self._ensure(run_id, dirs)
-            result = await self._exec_once(run_id, argv, stdin, timeout_s)
-            if result is not None:
-                return result
-            self._started.discard(run_id)  # the container is gone: recreate once
-            if attempt == 2:
-                raise SandboxError("the sandbox container stopped unexpectedly")
+        # one exec at a time per run: concurrent calls would race _ensure's `rm --force`
+        async with self._locks.setdefault(run_id, asyncio.Lock()):
+            for attempt in (1, 2):
+                await self._ensure(run_id, dirs)
+                result = await self._exec_once(run_id, argv, stdin, timeout_s)
+                if result is not None:
+                    return result
+                self._started.discard(run_id)  # the container is gone: recreate once
+                if attempt == 2:
+                    raise SandboxError("the sandbox container stopped unexpectedly")
         raise AssertionError("unreachable")
 
     async def _exec_once(
@@ -213,6 +216,12 @@ class DockerSandbox:
                 exit_code=-1, stdout="", stderr="", timed_out=True,
                 duration_ms=int((time.monotonic() - started) * 1000),
             )  # fmt: skip
+        except BaseException:
+            # cancelled or failed: do not leave the `docker exec` client running
+            if proc.returncode is None:
+                proc.kill()
+            await asyncio.shield(proc.wait())
+            raise
         code = proc.returncode
         assert code is not None
         stderr = _cut_text(err) if err_cut else _text(err)
@@ -230,6 +239,7 @@ class DockerSandbox:
 
     async def release(self, run_id: str) -> None:
         self._started.discard(run_id)
+        self._locks.pop(run_id, None)
         code, _, err = await self._docker_cmd("rm", "--force", container_name(run_id))
         if code != 0 and "No such container" not in err:
             log.warning("sandbox %s: release failed: %s", run_id, err.strip())
