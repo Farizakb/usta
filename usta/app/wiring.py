@@ -49,6 +49,7 @@ def build_model(
             api_key=key or "",
             max_output_tokens=rc.max_output_tokens,
             effort=rc.effort,
+            api_base=rc.api_base,
         )
     if entry.adapter == "litellm":
         from usta.models.litellm_adapter import LiteLLMModel  # litellm loads only when used

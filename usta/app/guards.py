@@ -6,6 +6,15 @@ from usta.app.config import Profile
 from usta.core.errors import ConfigError
 from usta.models.caps import ModelEntry
 
+# SDKs read these from the environment and would silently redirect the key and every request.
+ENDPOINT_ENV_OVERRIDES = (
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "OPENAI_BASE_URL",
+    "OPENAI_API_BASE",
+    "GEMINI_API_BASE",
+)
+
 
 def validate_startup(
     profile: Profile, catalog: Mapping[str, ModelEntry], env: Mapping[str, str]
@@ -42,6 +51,12 @@ def validate_startup(
     for role, rc in profile.roles.items():
         if rc.api_key_env and not env.get(rc.api_key_env):
             problems.append(f"role {role}: environment variable {rc.api_key_env} is not set")
+
+    if set_vars := [v for v in ENDPOINT_ENV_OVERRIDES if env.get(v)]:
+        problems.append(
+            f"P8: provider endpoint overrides are set in the environment: {', '.join(set_vars)}; "
+            "unset them and configure api_base in the profile instead"
+        )
 
     if problems:
         raise ConfigError("startup refused:\n- " + "\n- ".join(problems))

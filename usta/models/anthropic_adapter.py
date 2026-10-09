@@ -28,6 +28,9 @@ _STOP: dict[str | None, ModelStop] = {
 }
 
 
+DEFAULT_BASE_URL = "https://api.anthropic.com"
+
+
 class AnthropicModel:
     provider = "anthropic"
 
@@ -39,6 +42,7 @@ class AnthropicModel:
         api_key: str,
         max_output_tokens: int,
         effort: str | None = None,
+        api_base: str | None = None,
         http_client: Any = None,
     ) -> None:
         if not api_key:
@@ -51,7 +55,11 @@ class AnthropicModel:
         self._effort = effort
         # Retries live in the gateway (one policy, every attempt logged), so the SDK's are off.
         self._client = anthropic.AsyncAnthropic(
-            api_key=api_key, max_retries=0, http_client=http_client
+            api_key=api_key,
+            # Always explicit: the SDK would otherwise read ANTHROPIC_BASE_URL from the environment.
+            base_url=api_base or DEFAULT_BASE_URL,
+            max_retries=0,
+            http_client=http_client,
         )
 
     async def complete(self, req: ModelRequest) -> ModelResponse:

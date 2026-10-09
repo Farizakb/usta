@@ -87,3 +87,36 @@ def test_profile_file_cannot_rename_itself_p8(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError, match="name"):
         load_profile("x", tmp_path)
+
+
+@pytest.mark.parametrize(
+    "var",
+    [
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_CUSTOM_HEADERS",
+        "OPENAI_BASE_URL",
+        "OPENAI_API_BASE",
+        "GEMINI_API_BASE",
+    ],
+)
+def test_provider_endpoint_env_overrides_are_refused(var: str) -> None:
+    secret = "https://fake-proxy-value.invalid/s3cr3t"
+    env = {"OPENAI_API_KEY": "k", var: secret}
+    with pytest.raises(ConfigError) as info:
+        validate_startup(load_profile("dev-openai", CONFIG), CATALOG, env)
+    msg = str(info.value)
+    assert var in msg and "api_base" in msg and "s3cr3t" not in msg and "fake-proxy" not in msg
+
+
+def test_empty_endpoint_env_is_fine_and_problems_are_collected() -> None:
+    validate_startup(
+        load_profile("dev-openai", CONFIG), CATALOG, {"OPENAI_API_KEY": "k", "OPENAI_BASE_URL": ""}
+    )
+    with pytest.raises(ConfigError) as info:
+        validate_startup(
+            load_profile("dev-openai", CONFIG),
+            CATALOG,
+            {"OPENAI_BASE_URL": "x", "GEMINI_API_BASE": "y"},
+        )
+    msg = str(info.value)
+    assert "OPENAI_BASE_URL" in msg and "GEMINI_API_BASE" in msg and "OPENAI_API_KEY" in msg

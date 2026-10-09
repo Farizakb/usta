@@ -145,3 +145,26 @@ async def test_connection_error_is_transient() -> None:
 def test_empty_api_key_is_refused() -> None:
     with pytest.raises(ConfigError):
         AnthropicModel("claude-sonnet-5-5", CAPS, api_key="", max_output_tokens=1024)
+
+
+async def test_base_url_env_var_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.invalid")
+    seen: dict = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen["host"] = request.url.host
+        return httpx2.Response(200, json=WIRE_RESPONSE)
+
+    await make_model(handler).complete(CONTRACT_REQUEST)
+    assert seen == {"host": "api.anthropic.com"}
+
+
+async def test_profile_api_base_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen["host"] = request.url.host
+        return httpx2.Response(200, json=WIRE_RESPONSE)
+
+    await make_model(handler, api_base="https://gateway.example").complete(CONTRACT_REQUEST)
+    assert seen["host"] == "gateway.example"
