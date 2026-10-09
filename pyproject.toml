@@ -48,10 +48,11 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-m 'not live'"
+addopts = "-m 'not live and not sandbox'"
 markers = [
     "pg: needs Postgres (USTA_TEST_DATABASE_URL)",
     "live: calls a real model provider and spends quota; run with -m live",
+    "sandbox: needs Docker, gVisor (USTA_TEST_SANDBOX_RUNTIME, default runsc) and the usta-sandbox:1 image; run with -m sandbox",
 ]
 
 [tool.importlinter]

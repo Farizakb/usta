@@ -1,0 +1,8 @@
+# Sandbox image libraries (SPEC §10). Lock: see scripts/build_sandbox_image.sh header.
+pandas
+openpyxl
+matplotlib
+reportlab
+pdfplumber
+python-docx
+babel
