@@ -24,6 +24,9 @@ class PgRunStore:
     def __init__(self, engine: AsyncEngine, *, profile: str) -> None:
         self._engine = engine
         self._profile = profile
+        # Last checkpoint seq this instance loaded or wrote, per run. checkpoint() inserts exactly
+        # known + 1, so a writer holding a stale view hits the (run_id, seq) PK and fails loudly.
+        self._seq: dict[str, int] = {}
 
     async def add_user(self, user_id: str, display_name: str, scopes: Iterable[str] = ()) -> None:
         if not USER_ID.match(user_id):
@@ -58,6 +61,7 @@ class PgRunStore:
                         run_id=run.id, seq=0, state=run.model_dump(mode="json")
                     )
                 )
+            self._seq[run.id] = 0
         except IntegrityError as e:
             if "runs_user_id_fkey" in str(e.orig):
                 raise UnknownUser(
@@ -67,27 +71,25 @@ class PgRunStore:
 
     async def load(self, run_id: str) -> RunState:
         async with self._engine.connect() as conn:
-            state = (
+            row = (
                 await conn.execute(
-                    select(run_checkpoints.c.state)
+                    select(run_checkpoints.c.seq, run_checkpoints.c.state)
                     .where(run_checkpoints.c.run_id == run_id)
                     .order_by(run_checkpoints.c.seq.desc())
                     .limit(1)
                 )
-            ).scalar_one_or_none()
-        if state is None:
+            ).one_or_none()
+        if row is None:
             raise KeyError(f"no run {run_id}")
+        seq, state = row
+        self._seq[run_id] = seq
         return RunState.model_validate(state)
 
     async def checkpoint(self, run: RunState) -> None:
+        if run.id not in self._seq:
+            await self.load(run.id)  # never seen by this instance: the current max is the base
+        seq = self._seq[run.id] + 1
         async with self._engine.begin() as conn:
-            seq = (
-                await conn.execute(
-                    select(func.coalesce(func.max(run_checkpoints.c.seq), -1) + 1).where(
-                        run_checkpoints.c.run_id == run.id
-                    )
-                )
-            ).scalar_one()
             await conn.execute(
                 insert(run_checkpoints).values(
                     run_id=run.id, seq=seq, state=run.model_dump(mode="json")
@@ -105,6 +107,7 @@ class PgRunStore:
                     finished_at=func.now() if run.is_finished else None,
                 )
             )
+        self._seq[run.id] = seq  # only after the transaction committed
 
     async def ids_with_status(self, *statuses: RunStatus) -> list[str]:
         async with self._engine.connect() as conn:

@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 from sqlalchemy import event, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from usta.core.audit import ModelCallRecord, ToolCallRecord
@@ -200,3 +201,52 @@ async def test_add_user_is_an_upsert(store: PgRunStore, db_engine) -> None:
             await conn.execute(text("SELECT display_name, scopes FROM users WHERE id = 'u1'"))
         ).one()
     assert (row.display_name, row.scopes) == ("Yeni ad", ["email:read"])
+
+
+async def test_stale_second_writer_fails_loudly_and_changes_nothing(
+    store: PgRunStore, clean_db: str, db_engine
+) -> None:
+    run = new_run()
+    await store.create(run)
+    engine_b = create_async_engine(clean_db)
+
+    @event.listens_for(engine_b.sync_engine, "connect")
+    def _set_role(dbapi_connection, _record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SET ROLE usta_app")
+        cursor.close()
+        dbapi_connection.commit()
+
+    try:
+        store_b = PgRunStore(engine_b, profile="test")
+        a, b = await store.load(run.id), await store_b.load(run.id)
+        a.turns = 1
+        await store.checkpoint(a)
+        b.turns = 7
+        b.cost_usd = 0.4
+        with pytest.raises(IntegrityError):
+            await store_b.checkpoint(b)
+    finally:
+        await engine_b.dispose()
+
+    assert (await store.load(run.id)).turns == 1
+    async with db_engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT turns, cost_usd FROM runs WHERE id = :i"), {"i": run.id}
+            )
+        ).one()
+    assert (row.turns, row.cost_usd) == (1, 0)
+
+
+async def test_a_fresh_store_instance_can_continue_a_run(
+    store: PgRunStore, app_role_engine
+) -> None:
+    run = new_run()
+    await store.create(run)
+    await store.checkpoint(run)
+    fresh = PgRunStore(app_role_engine, profile="test")  # e.g. `usta recover` after a crash
+    run.turns = 2
+    await fresh.checkpoint(run)
+    await fresh.checkpoint(run)
+    assert (await fresh.load(run.id)).turns == 2

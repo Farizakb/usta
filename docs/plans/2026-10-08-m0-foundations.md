@@ -3999,7 +3999,7 @@ Audit tables use app-generated UUIDs, so the app role never needs sequence grant
 
 **Schema decisions (grilling round 1, approved by Fariz 2026-10-08):**
 1. `runs.status` CHECK lists all 6 `RunStatus` values (matches the enum, incl. M2's `awaiting_approval` / `unknown_outcome`).
-2. No cross-process run lease in M0. The `run_checkpoints` PK `(run_id, seq)` makes a second writer fail loudly. Nullable `lease_owner` / `lease_until` columns are a later additive migration (see Known Limitations).
+2. No cross-process run lease in M0. `PgRunStore` remembers the seq it last loaded or wrote per run and inserts exactly that + 1, so a second writer holding a stale view hits the `run_checkpoints` PK `(run_id, seq)` and fails loudly (final review I2). Nullable `lease_owner` / `lease_until` columns are a later additive migration (see Known Limitations).
 3. Costs stay `double precision` (Plan Decision 11); the README states why.
 4. `user_month_cost` sums `model_calls.cost_usd` (the audit table is the P7 source of truth), not `runs.cost_usd`.
 5. The month boundary is UTC: `created_at >= date_trunc('month', now() AT TIME ZONE 'UTC')`.
@@ -5732,7 +5732,7 @@ git tag m0 && git push origin m0
 - `ModelCallRecord.request` stores the full history on every call, so audit size grows quadratically with turns. Revisit storage in M3 (e.g. store per-turn deltas).
 - `Settings.config_dir` is relative, so the CLI must run from the repo root.
 - The monthly user cap only refuses new runs. A run in progress stops at its own per-run cap.
-- Run exclusion is in-process only (Worker guard, Task 10). Two `usta` processes resuming the same run fail loudly on the `run_checkpoints` PK rather than being prevented; a lease (`lease_owner` / `lease_until`) is a later additive migration.
+- Run exclusion is in-process only (Worker guard, Task 10). Two `usta` processes working the same run are not prevented: the stale one fails loudly on the `run_checkpoints` PK at its next checkpoint (optimistic seq in `PgRunStore`), but until then both may call the model and run tools; a lease (`lease_owner` / `lease_until`) is a later additive migration.
 - gVisor in WSL2 works only on runsc platforms `kvm`/`ptrace` (default `systrap` fails; ADR-005). The production VM's platform is checked at VM setup. M0 uses no sandbox.
 - LiteLLM adapter: provider-specific fields such as Gemini thought signatures are not preserved unless Task 15 forces it.
 - ⚠️ Preserved-thinking enforcement on Sonnet/Opus 5.5 conflicts with history-editing context layers. Revisit ADR-017 before M3 (Plan Decision 5).
