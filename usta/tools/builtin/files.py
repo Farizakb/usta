@@ -27,11 +27,24 @@ def resolve(path: str, ctx: ToolContext) -> Path:
     return target
 
 
+def _decode(data: bytes, path: str) -> str:
+    """UTF-8 (with or without BOM) or BOM-marked UTF-16. Anything else is refused: Postgres
+    cannot store NUL in text/jsonb, and mojibake would mislead the model."""
+    encoding = "utf-16" if data.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+    try:
+        text = data.decode(encoding)
+    except UnicodeDecodeError as e:
+        raise ToolInputError(f"binary or unsupported encoding: {path!r}") from e
+    if "\x00" in text:
+        raise ToolInputError(f"binary or unsupported encoding: {path!r}")
+    return text
+
+
 async def _read(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     target = resolve(args["path"], ctx)
     if not target.is_file():
         raise ToolInputError(f"not a file: {args['path']!r}")
-    text = (await asyncio.to_thread(target.read_bytes)).decode("utf-8", errors="replace")
+    text = _decode(await asyncio.to_thread(target.read_bytes), args["path"])
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS] + f"\n[truncated: showing {MAX_CHARS} of {len(text)} characters]"
     return ToolOutput(text)

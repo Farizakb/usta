@@ -126,3 +126,18 @@ def test_specs_are_sorted_for_a_stable_cached_prefix() -> None:
         name="alpha", description="a", input_schema={"type": "object"}, tier="local", fn=ECHO.fn
     )
     assert [s.name for s in ToolRegistry([zeta, alpha]).specs()] == ["alpha", "zeta"]
+
+
+async def test_refused_binary_read_still_writes_intent_and_done_rows(tmp_path: Path) -> None:
+    from usta.tools.builtin.files import FILE_READ
+
+    files = tmp_path / "u1" / "files"
+    files.mkdir(parents=True)
+    (files / "x.xlsx").write_bytes(b"PK\x03\x04\x00\x00binary")
+    p, store = pipeline(tmp_path, FILE_READ)
+    out = await p.handle(
+        ToolCall(id="c1", name="file.read", input={"path": "files/x.xlsx"}), run_state()
+    )
+    assert out.result.is_error and "binary or unsupported encoding" in out.result.content
+    assert [r.phase for r in store.tool_calls] == ["intent", "done"]
+    assert store.tool_calls[1].is_error

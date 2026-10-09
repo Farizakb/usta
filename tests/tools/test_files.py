@@ -66,3 +66,29 @@ async def test_large_files_are_truncated_with_a_marker(ctx: ToolContext) -> None
     out = (await FILE_READ.fn({"path": "files/big.txt"}, ctx)).content
     assert out.startswith("ə" * MAX_CHARS)
     assert out.endswith(f"[truncated: showing {MAX_CHARS} of {MAX_CHARS + 10} characters]")
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-le", "utf-16-be", "utf-8-sig", "utf-8"])
+async def test_reads_bom_encoded_azerbaijani_text(ctx: ToolContext, encoding: str) -> None:
+    text = "Salam dünya: İSTİQAMƏT, ğ ş ı ö ü ç ə"
+    data = text.encode(encoding)
+    if encoding == "utf-16-le":
+        data = b"\xff\xfe" + data
+    elif encoding == "utf-16-be":
+        data = b"\xfe\xff" + data
+    (ctx.files_dir / "x.txt").write_bytes(data)
+    assert (await FILE_READ.fn({"path": "files/x.txt"}, ctx)).content == text
+
+
+async def test_file_with_nul_bytes_is_refused(ctx: ToolContext) -> None:
+    (ctx.files_dir / "a.bin").write_bytes(b"PK\x03\x04\x00\x00data")
+    with pytest.raises(ToolInputError, match="binary or unsupported encoding"):
+        await FILE_READ.fn({"path": "files/a.bin"}, ctx)
+
+
+async def test_undecodable_file_is_refused(ctx: ToolContext) -> None:
+    (ctx.files_dir / "a.txt").write_bytes(b"\xff\xfeab\xc3")  # BOM then a truncated UTF-16 unit
+    (ctx.files_dir / "b.txt").write_bytes(b"caf\xe9")  # latin-1, not UTF-8
+    for name in ("a.txt", "b.txt"):
+        with pytest.raises(ToolInputError, match="binary or unsupported encoding"):
+            await FILE_READ.fn({"path": f"files/{name}"}, ctx)
