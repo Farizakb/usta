@@ -6,7 +6,7 @@ from usta.core.errors import ProviderQuotaError
 from usta.core.messages import Message, ToolCall
 from usta.core.model import ModelResponse, Usage
 from usta.core.run import RunState, RunStatus, StopReason
-from usta.engines.own.loop import OwnEngine
+from usta.engines.own.loop import OwnEngine, build_request
 from usta.engines.own.prompt import PROMPT_VERSION
 from usta.models.fake import call, reply
 
@@ -187,3 +187,17 @@ async def test_tool_audit_sink_records_executed_calls(tmp_path: Path) -> None:
         ("test.echo", "intent"),
         ("test.echo", "done"),
     ]
+
+
+def test_skill_index_is_a_second_cached_system_block() -> None:
+    run = RunState.new(id="r1", user_id="u1", task="t", engine="own", cost_cap_usd=0.5)
+    plain = build_request(run, ())
+    assert len(plain.system) == 1 and plain.system[0].cache
+    with_index = build_request(run, (), skill_index="Skills:\n- charts: PNG charts")
+    assert [b.cache for b in with_index.system] == [False, True]
+    assert with_index.system[1].text.startswith("Skills:")
+    assert with_index.prompt_version.startswith(PROMPT_VERSION + "+sk-")
+    assert (
+        with_index.prompt_version
+        == build_request(run, (), skill_index="Skills:\n- charts: PNG charts").prompt_version
+    )

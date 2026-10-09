@@ -69,12 +69,12 @@ class SandboxPort(Protocol):
 
 @dataclass(frozen=True)
 class RunContext:
-    """What an engine gets; identical for both engines (SPEC §3.3). Skills (M1) and the
-    run token (M2) are added when they exist."""
+    """What an engine gets; identical for both engines (SPEC §3.3). The run token (M2) is added when it exists."""
 
     models: ModelGateway
     tools: ToolPipelinePort
     store: RunStore
+    skill_index: str = ""  # SkillSet.index_text(); joins the cached prefix (SPEC §7.1)
 
 
 class EnginePort(Protocol):

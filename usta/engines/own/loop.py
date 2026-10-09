@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
@@ -18,13 +19,20 @@ from usta.ports import RunContext
 log = logging.getLogger(__name__)
 
 
-def build_request(run: RunState, tools: tuple[ToolSpec, ...]) -> ModelRequest:
+def build_request(
+    run: RunState, tools: tuple[ToolSpec, ...], skill_index: str = ""
+) -> ModelRequest:
+    system = (SystemBlock(text=SYSTEM_PROMPT, cache=not skill_index),)
+    version = PROMPT_VERSION
+    if skill_index:  # stable per skill set, so the cached prefix stays byte-identical (R10)
+        system += (SystemBlock(text=skill_index, cache=True),)
+        version += "+sk-" + hashlib.sha256(skill_index.encode("utf-8")).hexdigest()[:8]
     return ModelRequest(
         role="main",
-        system=(SystemBlock(text=SYSTEM_PROMPT, cache=True),),
+        system=system,
         messages=tuple(run.messages),
         tools=tools,
-        prompt_version=PROMPT_VERSION,
+        prompt_version=version,
         run_id=run.id,
         user_id=run.user_id,
     )
@@ -94,7 +102,9 @@ class OwnEngine:
                     yield Event.parked(run)
                     return
 
-                resp = await ctx.models.complete(build_request(run, ctx.tools.specs()))
+                resp = await ctx.models.complete(
+                    build_request(run, ctx.tools.specs(), ctx.skill_index)
+                )
                 run.record(resp)
                 timer.tick()
                 # Refused/truncated turns must not be checkpointed as running: a crash then
