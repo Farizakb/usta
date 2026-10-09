@@ -553,8 +553,8 @@ Runs in Usta **after the engine reports done**, identical for both engines.
 
 ## 20. Open items (resolved during build, not design)
 
-1. gVisor-in-WSL2 spike result (M0 day 1).
-2. Free-tier model for `dev-free` (pick the best tool-calling model available on a free tier at M0).
+1. gVisor-in-WSL2 spike result (M0 day 1). **Result: passed 2026-10-08 (ADR-005) on runsc platforms `kvm` (dev default, fastest) and `ptrace`; the default `systrap` fails in WSL2. Production VM platform is decided at VM setup.**
+2. Free-tier model for `dev-free` (pick the best tool-calling model available on a free tier at M0). **Result 2026-10-09: the dev own-loop model is now `openai/gpt-6-luna` via LiteLLM (profile `dev-openai`; user decision; OpenAI API data is not used for training by default; about $0.01 per smoke). `dev-free` (Gemini free tier) stays as the $0 option.**
 3. Measured cost per task → recalibrate run budget (after M3).
 4. Tavily vs Brave on 30 Azerbaijani queries (M2; cut-able).
 5. Which official reference MCP server is the third-party proof (M2).

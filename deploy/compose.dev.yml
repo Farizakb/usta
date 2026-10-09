@@ -1,0 +1,15 @@
+# Dev/test Postgres. Passwords here are local dev values, not secrets.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: usta
+      POSTGRES_PASSWORD: usta_owner_dev
+      POSTGRES_DB: usta
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+volumes:
+  pgdata:

@@ -3997,6 +3997,24 @@ git commit -m "feat(worker): submit, execute, budget answer, cancel, crash recov
 
 Audit tables use app-generated UUIDs, so the app role never needs sequence grants. Audit `created_at` uses `clock_timestamp()`, so rows written in one transaction keep their order.
 
+**Schema decisions (grilling round 1, approved by Fariz 2026-10-08):**
+1. `runs.status` CHECK lists all 6 `RunStatus` values (matches the enum, incl. M2's `awaiting_approval` / `unknown_outcome`).
+2. No cross-process run lease in M0. `PgRunStore` remembers the seq it last loaded or wrote per run and inserts exactly that + 1, so a second writer holding a stale view hits the `run_checkpoints` PK `(run_id, seq)` and fails loudly (final review I2). Nullable `lease_owner` / `lease_until` columns are a later additive migration (see Known Limitations).
+3. Costs stay `double precision` (Plan Decision 11); the README states why.
+4. `user_month_cost` sums `model_calls.cost_usd` (the audit table is the P7 source of truth), not `runs.cost_usd`.
+5. The month boundary is UTC: `created_at >= date_trunc('month', now() AT TIME ZONE 'UTC')`.
+6. `users.id` gets `CHECK (id ~ '^[a-z0-9][a-z0-9_-]{0,63}$')`; app code also validates before insert for a clear message.
+7. Audit append-only via grants only (no trigger); `tests/store/test_schema.py` proves `usta_app` cannot `UPDATE`, `DELETE` or `TRUNCATE` audit tables.
+8. `model_calls.request` stores the full request in M0; revisit size at M3 with real numbers.
+9. Every checkpoint writes the `run_checkpoints` row and updates the `runs` summary in one transaction (Task 12 rule).
+
+**Schema decisions (grilling round 2, approved by Fariz 2026-10-08):**
+10. Keep every per-step `run_checkpoints` row in M0; pruning is an M3 concern.
+11. Replace the plain `runs (status)` index with a partial index `ON runs (status) WHERE status <> 'finished'` (what `recover` scans).
+12. Migrations run as the owner role. `usta_app` gets `SELECT, INSERT, UPDATE` on `users`, `runs`, `run_checkpoints` (no `DELETE`); `SELECT, INSERT` only on audit tables.
+13. `usta_purge` gets `SELECT, DELETE` on `runs` (cascades to checkpoints) and on the audit tables. The `usta purge` CLI stays deferred (Plan Decision 15).
+14. `usta_app` / `usta_purge` are `NOLOGIN` group roles created by the migration. Dev login users that are members of them are created in `deploy/postgres/init.sql`, with dev-only passwords in `.env.example`; prod creates its own.
+
 - [ ] **Step 0: STOP. Show Fariz the schema table above and get explicit approval** (or changes) before writing the migration. If anything changes, update this table first.
 
 - [ ] **Step 1: Write the fixtures and the failing test.** `tests/conftest.py`:
@@ -5714,6 +5732,22 @@ git tag m0 && git push origin m0
 - `ModelCallRecord.request` stores the full history on every call, so audit size grows quadratically with turns. Revisit storage in M3 (e.g. store per-turn deltas).
 - `Settings.config_dir` is relative, so the CLI must run from the repo root.
 - The monthly user cap only refuses new runs. A run in progress stops at its own per-run cap.
+- Run exclusion is in-process only (Worker guard, Task 10). Two `usta` processes working the same run are not prevented: the stale one fails loudly on the `run_checkpoints` PK at its next checkpoint (optimistic seq in `PgRunStore`), but until then both may call the model and run tools; a lease (`lease_owner` / `lease_until`) is a later additive migration.
+- gVisor in WSL2 works only on runsc platforms `kvm`/`ptrace` (default `systrap` fails; ADR-005). The production VM's platform is checked at VM setup. M0 uses no sandbox.
 - LiteLLM adapter: provider-specific fields such as Gemini thought signatures are not preserved unless Task 15 forces it.
 - ⚠️ Preserved-thinking enforcement on Sonnet/Opus 5.5 conflicts with history-editing context layers. Revisit ADR-017 before M3 (Plan Decision 5).
+- CI: gitleaks-action needs a `GITLEAKS_LICENSE` secret if the repo moves into a GitHub organization.
+- Cross-provider resume: the Anthropic `_message` drops foreign blocks, and a parked run can resume under a different profile (`runs.profile` is not checked on resume).
+- LiteLLM adapter: `tc["id"]` / `fn["name"]` are hard-indexed and non-str/dict arguments raise TypeError. The run ends `error` with the billed call logged at $0 (P7 undercount); matters for `dev-free` / Gemini.
+- A `_log` failure on the gateway success path loses the response, and a billed call without a `model_calls` row undercounts P7 and monthly totals when the DB fails mid-call.
+- `file.read` has a check-then-read TOCTOU (no `O_NOFOLLOW`). Fix it together with `file.write` in M1.
+- `file.read` loads the whole file before truncating to 50k characters.
+- `CancelledError` during a tool call leaves an `intent` row without `done`. Fix before M2 turns that into `unknown_outcome`.
+- Tool results are appended only after the whole batch (Plan Decision 7), so a crash re-executes every call in the batch. This blocks `external_write` in M2.
+- `CancelledError` / Ctrl-C leaves the run `running`, and `usta recover` resumes it (ADR-014 rule 3); a user who pressed Ctrl-C may have meant cancel.
+- Cancelling an `UNKNOWN_OUTCOME` run discards the side-effect marker (matters from M2).
+- A crashed run's cancel is honoured only via `recover`, and pending tool calls run before the cancel check (matters for M2 `external_write`).
+- LiteLLM's "Provider List" banner reaches the CLI on every dev run; `litellm.suppress_debug_info = True` silences it.
+- `usta cancel` on a run still `queued` in the DB but already executing in another process: one side fails loudly on the `run_checkpoints` PK, so there is no silent overwrite, but that step's model call and tools may still run once (matters for M2 `external_write`; fix with `request_cancel` for possibly-live runs or the lease).
+- `file.read` refuses files that are not UTF-8 or BOM-marked UTF-16 (e.g. Windows-1254). M1: a clearer hint in the error, or a cp1254 fallback applied after the NUL check.
 

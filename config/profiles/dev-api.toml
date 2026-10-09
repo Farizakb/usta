@@ -1,0 +1,14 @@
+# Own loop on the Anthropic API with a $20/month Console cap (ADR-013).
+engine = "own"
+sandbox = "gvisor"
+
+[roles.main]
+model = "claude-sonnet-5-5"
+api_key_env = "ANTHROPIC_API_KEY"
+max_output_tokens = 16000
+effort = "medium"  # cost lever; measured in M3
+
+[roles.light]
+model = "claude-haiku-4-5"  # Haiku 4.5 rejects the effort parameter
+api_key_env = "ANTHROPIC_API_KEY"
+max_output_tokens = 4096

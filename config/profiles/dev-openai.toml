@@ -1,0 +1,18 @@
+# Own loop on OpenAI gpt-6-luna via LiteLLM (user decision 2026-10-09; ~$0.01 per smoke).
+# OpenAI documents that Chat Completions function calling on gpt-6-luna works only with
+# reasoning_effort = none, and LiteLLM's completion() uses Chat Completions (ADR-021:
+# no text-emulated tools), so effort stays "none".
+engine = "own"
+sandbox = "gvisor"
+
+[roles.main]
+model = "openai/gpt-6-luna"
+api_key_env = "OPENAI_API_KEY"
+max_output_tokens = 8192
+effort = "none"
+
+[roles.light]
+model = "openai/gpt-6-luna"
+api_key_env = "OPENAI_API_KEY"
+max_output_tokens = 4096
+effort = "none"
