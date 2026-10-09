@@ -59,12 +59,13 @@ root_package = "usta"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Layers (P5): core <- ports <- adapters/engine/tools/store/worker <- app <- cli"
+name = "Layers (P5): core <- ports <- libs <- adapters/engine/tools/store/worker <- app <- cli"
 type = "layers"
 layers = [
     "usta.cli",
     "usta.app",
     "usta.engines | usta.models | usta.tools | usta.store | usta.worker",
+    "usta.lang",
     "usta.ports",
     "usta.core",
 ]
