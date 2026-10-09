@@ -5748,4 +5748,6 @@ git tag m0 && git push origin m0
 - Cancelling an `UNKNOWN_OUTCOME` run discards the side-effect marker (matters from M2).
 - A crashed run's cancel is honoured only via `recover`, and pending tool calls run before the cancel check (matters for M2 `external_write`).
 - LiteLLM's "Provider List" banner reaches the CLI on every dev run; `litellm.suppress_debug_info = True` silences it.
+- `usta cancel` on a run still `queued` in the DB but already executing in another process: one side fails loudly on the `run_checkpoints` PK, so there is no silent overwrite, but that step's model call and tools may still run once (matters for M2 `external_write`; fix with `request_cancel` for possibly-live runs or the lease).
+- `file.read` refuses files that are not UTF-8 or BOM-marked UTF-16 (e.g. Windows-1254). M1: a clearer hint in the error, or a cp1254 fallback applied after the NUL check.
 
