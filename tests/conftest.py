@@ -1,6 +1,7 @@
 """Shared fixtures. Postgres tests need USTA_TEST_DATABASE_URL: an owner role on a throwaway DB."""
 
 import asyncio
+import json
 import os
 import uuid
 from dataclasses import dataclass
@@ -103,6 +104,13 @@ class Box:
         return await self.sandbox.exec(
             self.run_id, self.dirs, ("python", "-"), stdin=code, timeout_s=timeout_s
         )
+
+    async def check(self, skill: str, rel: str) -> dict:
+        res = await self.sandbox.exec(
+            self.run_id, self.dirs, ("python", f"/skills/{skill}/check.py", f"/out/{rel}")
+        )
+        assert res.exit_code == 0, res.stderr
+        return json.loads(res.stdout.strip().splitlines()[-1])
 
 
 @pytest.fixture
