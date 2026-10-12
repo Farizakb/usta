@@ -249,6 +249,13 @@ async def test_second_failure_stops_verification_failed(tmp_path: Path) -> None:
     assert run.final_text() == "2"  # the output is still there to show with a warning
 
 
+async def test_long_reasons_are_capped_in_the_retry_message(tmp_path: Path) -> None:
+    v = FakeVerifier([fail("x" * 5000), PASS])
+    _, _, model, _ = await drive([reply("Bitdi."), reply("İndi bitdi.")], tmp_path, verifier=v)
+    retry = model.requests[1].messages[-1].text()
+    assert "x" * 1000 in retry and "x" * 1001 not in retry
+
+
 async def test_verifier_cost_counts_toward_the_run(tmp_path: Path) -> None:
     v = FakeVerifier([VerifyResult(ok=True, cost_usd=0.07)])
     run, _, _, _ = await drive([reply("ok")], tmp_path, verifier=v)

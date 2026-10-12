@@ -157,7 +157,7 @@ class OwnEngine:
                         )
                         return
                     run.verify_failures += 1
-                    reasons = "\n".join(f"- {r}" for r in verdict.reasons)
+                    reasons = "\n".join(f"- {r[:1000]}" for r in verdict.reasons)
                     run.messages.append(Message.user_text(VERIFY_RETRY.format(reasons=reasons)))
                     await ctx.store.checkpoint(run)
                     continue

@@ -161,3 +161,22 @@ async def test_english_task_expects_english(tmp_path: Path) -> None:
     run.task = "Show the mismatches between the warehouse and the invoices"
     run.messages[-1] = Message(role="assistant", content=(TextBlock(text=EN_ANSWER),))
     assert (await v.check(run)).ok
+
+
+async def test_too_many_output_files_fail_without_running_the_checks(tmp_path: Path) -> None:
+    v, run, out, sandbox, model = make(tmp_path, [])
+    for i in range(21):
+        (out / f"f{i:02d}.xlsx").write_bytes(b"x")
+    result = await v.check(run)
+    assert not result.ok and sandbox.calls == [] and model.requests == []
+    assert "too many output files to verify (21 > 20)" in result.reasons[0]
+    assert len(result.files) == 1 and not result.files[0].ok
+
+
+async def test_twenty_output_files_are_still_checked(tmp_path: Path) -> None:
+    v, run, out, sandbox, _ = make(
+        tmp_path, [reply('{"verdict": "pass"}')], lambda *_: check_json(True)
+    )
+    for i in range(20):
+        (out / f"f{i:02d}.xlsx").write_bytes(b"x")
+    assert (await v.check(run)).ok and len(sandbox.calls) == 20

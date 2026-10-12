@@ -22,6 +22,7 @@ CHECKS = {".pdf": "pdf-report", ".xlsx": "xlsx", ".docx": "docx", ".png": "chart
 LANG_CHECKED = {".pdf", ".docx"}  # prose; xlsx cells and charts are codes and labels
 EXCERPT_CHARS = 1_500
 CHECK_TIMEOUT_S = 60.0
+MAX_CHECKED_FILES = 20
 
 VERIFIER_PROMPT = """\
 You check whether an AI agent's final answer completes the user's task. You never fix anything.
@@ -73,11 +74,15 @@ class Verifier:
         task_lang = detect(run.task, min_words=1)  # short tasks: tr/None mostly mean az
         expected = task_lang if task_lang in ("en", "ru") else "az"
         outputs = self._outputs(dirs.out)
-        files = [
-            await self._check_file(run, dirs, rel, self._checks[Path(rel).suffix.lower()])
-            for rel in outputs
-            if Path(rel).suffix.lower() in self._checks
-        ]
+        checkable = [rel for rel in outputs if Path(rel).suffix.lower() in self._checks]
+        if len(checkable) > MAX_CHECKED_FILES:
+            reason = f"too many output files to verify ({len(checkable)} > {MAX_CHECKED_FILES})"
+            files = [FileCheck(path="out/", skill="", ok=False, reasons=(reason,))]
+        else:
+            files = [
+                await self._check_file(run, dirs, rel, self._checks[Path(rel).suffix.lower()])
+                for rel in checkable
+            ]
         reasons = [f"{f.path}: {r}" for f in files for r in f.reasons]
         answer = langcheck(run.final_text(), expected)
         if not answer.ok:
