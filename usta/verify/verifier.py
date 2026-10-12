@@ -116,19 +116,25 @@ class Verifier:
             timeout_s=CHECK_TIMEOUT_S,
         )
         path = f"out/{rel}"
+        tail = (res.stderr or res.stdout).strip()[-300:]
+
+        def failed(reason: str) -> FileCheck:
+            return FileCheck(path=path, skill=skill, ok=False, reasons=(reason,))
+
+        if res.exit_code != 0:
+            return failed(f"{skill} check.py exited {res.exit_code}: {tail}")
         try:
             data = json.loads(res.stdout.strip().splitlines()[-1])
-            ok = bool(data["ok"])
-            reasons = tuple(str(r) for r in data.get("reasons") or ())
+            if not isinstance(data["ok"], bool):
+                raise TypeError("ok is not a bool")
+            raw = data.get("reasons", [])
+            if not isinstance(raw, list):
+                raise TypeError("reasons is not a list")
+            ok = data["ok"] is True
+            reasons = tuple(str(r) for r in raw)
             sample = str(data.get("text_sample") or "")
         except (IndexError, ValueError, KeyError, TypeError, AttributeError):
-            tail = (res.stderr or res.stdout).strip()[-300:]
-            return FileCheck(
-                path=path,
-                skill=skill,
-                ok=False,
-                reasons=(f"{skill} check.py crashed (exit {res.exit_code}): {tail}",),
-            )
+            return failed(f"{skill} check.py output unparseable: {tail}")
         if not ok and not reasons:
             reasons = (f"{skill} check failed without a reason",)
         return FileCheck(

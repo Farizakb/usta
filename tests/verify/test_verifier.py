@@ -81,7 +81,7 @@ async def test_crashed_check_is_a_failure(tmp_path: Path) -> None:
     )
     (out / "a.xlsx").write_bytes(b"x")
     result = await v.check(run)
-    assert not result.ok and "check.py crashed (exit 1): Traceback: boom" in result.reasons[0]
+    assert not result.ok and "check.py exited 1: Traceback: boom" in result.reasons[0]
 
 
 async def test_files_without_a_check_skill_are_not_checked(tmp_path: Path) -> None:
@@ -129,3 +129,35 @@ async def test_symlinks_in_out_are_ignored(tmp_path: Path) -> None:
     v, run, out, sandbox, _ = make(tmp_path, [reply('{"verdict": "pass"}')])
     (out / "link.pdf").symlink_to("/etc/hostname")
     assert (await v.check(run)).ok and sandbox.calls == []
+
+
+@pytest.mark.parametrize("code", [1, 2])
+async def test_nonzero_exit_fails_even_with_ok_json(tmp_path: Path, code: int) -> None:
+    ok_json = check_json(True, sample="x").stdout
+    v, run, out, _, model = make(
+        tmp_path, [], lambda *_: ExecResult(exit_code=code, stdout=ok_json, stderr="usage")
+    )
+    (out / "a.xlsx").write_bytes(b"x")
+    result = await v.check(run)
+    assert not result.ok and model.requests == []
+    assert f"check.py exited {code}" in result.reasons[0]
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    ['{"ok": "false", "reasons": [], "text_sample": ""}', '{"ok": true, "reasons": "x"}'],
+)
+async def test_non_strict_check_output_is_unparseable(tmp_path: Path, stdout: str) -> None:
+    v, run, out, _, _ = make(
+        tmp_path, [], lambda *_: ExecResult(exit_code=0, stdout=stdout + "\n", stderr="")
+    )
+    (out / "a.xlsx").write_bytes(b"x")
+    result = await v.check(run)
+    assert not result.ok and "check.py output unparseable" in result.reasons[0]
+
+
+async def test_english_task_expects_english(tmp_path: Path) -> None:
+    v, run, _, _, _ = make(tmp_path, [reply('{"verdict": "pass"}')])
+    run.task = "Show the mismatches between the warehouse and the invoices"
+    run.messages[-1] = Message(role="assistant", content=(TextBlock(text=EN_ANSWER),))
+    assert (await v.check(run)).ok
