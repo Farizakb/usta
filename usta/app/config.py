@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     user: str = ""
     config_dir: Path = Path("config")
     workspace_root: Path = Path("workspaces")
+    gvisor_runtime: str = "runsc"  # docker runtime name for gVisor; runsc-kvm in WSL2 dev (ADR-005)
+    skills_dir: Path = Path("skills")
 
 
 class RoleConfig(BaseModel):
@@ -48,6 +50,7 @@ class Profile(BaseModel):
     name: str
     engine: Literal["own", "sdk"]
     sandbox: Literal["gvisor", "docker_hardened"]
+    sandbox_image: str = "usta-sandbox:1"
     bind: str = "127.0.0.1"
     multi_user: bool = False
     roles: dict[Role, RoleConfig]

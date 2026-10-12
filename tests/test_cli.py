@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.fakes import FakeSandbox
 from usta import cli
 from usta.app.wiring import build_app
 from usta.cli import build_parser, format_event, main
@@ -58,8 +59,11 @@ def test_cli_runs_a_task_end_to_end(
     script = [
         call("todo", {"items": [{"content": "Siyahı qur", "status": "done"}]}),
         reply("Hazırdır, ə ğ ı ş."),
+        reply('{"verdict": "pass", "reasons": []}'),
     ]
-    factory = functools.partial(build_app, model_overrides={"main": FakeModel(script)})
+    factory = functools.partial(
+        build_app, model_overrides={"main": FakeModel(script)}, sandbox_override=FakeSandbox()
+    )
 
     assert main(["user", "u1", "--name", "Test"], app_factory=factory) == 0
     assert main(["run", "Siyahı qur"], app_factory=factory) == 0
@@ -75,7 +79,9 @@ def test_unknown_user_is_a_clean_error(
     monkeypatch.setenv("USTA_PROFILE", "test")
     monkeypatch.setenv("USTA_DATABASE_URL", clean_db)
     monkeypatch.setenv("USTA_USER", "ghost")
-    factory = functools.partial(build_app, model_overrides={"main": FakeModel([])})
+    factory = functools.partial(
+        build_app, model_overrides={"main": FakeModel([])}, sandbox_override=FakeSandbox()
+    )
     assert main(["run", "salam"], app_factory=factory) == 2
     assert "usta user ghost" in capsys.readouterr().err
 
@@ -173,7 +179,9 @@ def _parking_factory() -> functools.partial:
         call("todo", {"items": [{"content": "Siyahı qur", "status": "in_progress"}]}, usage=spend)
     ]
     model = FakeModel(script, model_id="claude-haiku-4-5")
-    return functools.partial(build_app, model_overrides={"main": model})
+    return functools.partial(
+        build_app, model_overrides={"main": model}, sandbox_override=FakeSandbox()
+    )
 
 
 @pytest.mark.pg
@@ -213,7 +221,9 @@ def test_recover_on_an_empty_db_reports_zero(
     clean_db: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
     _set_env(monkeypatch, clean_db, tmp_path, "u1")
-    factory = functools.partial(build_app, model_overrides={"main": FakeModel([])})
+    factory = functools.partial(
+        build_app, model_overrides={"main": FakeModel([])}, sandbox_override=FakeSandbox()
+    )
     assert main(["recover"], app_factory=factory) == 0
     assert capsys.readouterr().out.strip() == "recovered 0 run(s)"
 
@@ -223,7 +233,9 @@ def test_invalid_user_id_is_a_clean_error(
     clean_db: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
     _set_env(monkeypatch, clean_db, tmp_path, "u1")
-    factory = functools.partial(build_app, model_overrides={"main": FakeModel([])})
+    factory = functools.partial(
+        build_app, model_overrides={"main": FakeModel([])}, sandbox_override=FakeSandbox()
+    )
     assert main(["user", "../x"], app_factory=factory) == 2
     err = capsys.readouterr().err
     assert err.startswith("usta: invalid user id") and "Traceback" not in err
