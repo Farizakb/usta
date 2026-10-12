@@ -43,7 +43,9 @@ class SandboxConfig:
     gid: int
     cpus: str = "1"
     memory: str = "1g"
-    pids: int = 128
+    # host backstop: under gVisor ptrace each guest process costs ~8-10 host threads; the guest cap is nproc
+    pids: int = 4096
+    nproc: int = 128
     tmp_size: str = "256m"
 
 
@@ -117,6 +119,7 @@ class DockerSandbox:
             "--memory", c.memory,
             "--memory-swap", c.memory,
             "--pids-limit", str(c.pids),
+            "--ulimit", f"nproc={c.nproc}:{c.nproc}",
             "--mount", f"type=bind,source={files},target=/workspace,readonly",
             "--mount", f"type=bind,source={out},target=/out",
             "--mount", f"type=bind,source={skills},target=/skills,readonly",
@@ -228,6 +231,11 @@ class DockerSandbox:
         if code != 0 and stderr.startswith("Error response from daemon"):
             log.warning("sandbox %s: %s", run_id, stderr.strip())
             return None
+        if code in (124, 137):
+            # timed out: stray children (fork bomb, backgrounded jobs) may still hold the nproc
+            # budget and would starve the next exec, so destroy the container; /out survives
+            log.warning("sandbox %s: exec timed out; destroying the container", run_id)
+            await self.release(run_id)
         return ExecResult(
             exit_code=code,
             stdout=_cut_text(out) if out_cut else _text(out),

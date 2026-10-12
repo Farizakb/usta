@@ -128,11 +128,8 @@ for p in procs:
     p.kill()
 """
     )
-    # Under gVisor the pids cgroup also counts the sentry's own host threads, so the limit bites
-    # after a handful of guest processes and may abort the exec instead of raising OSError.
-    # Either way 128+ processes must never start, and the sandbox must stay usable afterwards.
-    if res.exit_code == 0:
-        assert json.loads(res.stdout.strip().splitlines()[-1])["started"] < 128
+    assert res.exit_code == 0, res.stderr
+    assert json.loads(res.stdout.strip().splitlines()[-1])["started"] < 128
     assert (await box.run("print('ok')")).stdout == "ok\n"
 
 

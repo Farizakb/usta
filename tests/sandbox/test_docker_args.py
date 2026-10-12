@@ -19,7 +19,8 @@ def test_run_args_carry_every_hardening_flag() -> None:
     for flag in (
         "--runtime runsc", "--network none", "--cap-drop ALL",
         "--security-opt no-new-privileges", "--read-only", "--user 1000:1000",
-        "--cpus 1", "--memory 1g", "--memory-swap 1g", "--pids-limit 128",
+        "--cpus 1", "--memory 1g", "--memory-swap 1g", "--pids-limit 4096",
+        "--ulimit nproc=128:128",
         f"--label {LABEL}=r1", f"--name {container_name('r1')}",
     ):  # fmt: skip
         assert flag in joined, flag
