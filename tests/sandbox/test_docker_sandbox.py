@@ -44,6 +44,15 @@ async def test_timeout_kills_and_the_next_call_works(box: Box) -> None:
     assert (await box.run("print('ok')")).stdout == "ok\n"
 
 
+async def test_timeout_keeps_the_run_exec_lock(box: Box) -> None:
+    # the timed-out exec destroys the container while holding the lock; swapping the lock would
+    # let a new caller run concurrently with callers already queued on the old one
+    await box.run("print('warm')")
+    lock = box.sandbox._locks[box.run_id]
+    assert (await box.run("while True:\n    pass", timeout_s=2)).timed_out
+    assert box.sandbox._locks[box.run_id] is lock
+
+
 async def test_output_flood_is_capped(box: Box) -> None:
     # many small writes: under gVisor a single write over 64 KiB is cut by the runtime's stdio
     # relay before it reaches the driver (see task-4 report), so one giant print would not flood.

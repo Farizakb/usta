@@ -214,7 +214,7 @@ class DockerSandbox:
             proc.kill()
             await proc.wait()
             log.warning("sandbox %s: outer timeout; destroying the container", run_id)
-            await self.release(run_id)
+            await self._destroy(run_id)
             return ExecResult(
                 exit_code=-1, stdout="", stderr="", timed_out=True,
                 duration_ms=int((time.monotonic() - started) * 1000),
@@ -235,7 +235,7 @@ class DockerSandbox:
             # timed out: stray children (fork bomb, backgrounded jobs) may still hold the nproc
             # budget and would starve the next exec, so destroy the container; /out survives
             log.warning("sandbox %s: exec timed out; destroying the container", run_id)
-            await self.release(run_id)
+            await self._destroy(run_id)
         return ExecResult(
             exit_code=code,
             stdout=_cut_text(out) if out_cut else _text(out),
@@ -246,8 +246,13 @@ class DockerSandbox:
         )
 
     async def release(self, run_id: str) -> None:
-        self._started.discard(run_id)
         self._locks.pop(run_id, None)
+        await self._destroy(run_id)
+
+    async def _destroy(self, run_id: str) -> None:
+        # keeps the run's exec lock: callers inside exec still hold it, and dropping it would let a
+        # new caller run concurrently with ones already queued on the old lock
+        self._started.discard(run_id)
         code, _, err = await self._docker_cmd("rm", "--force", container_name(run_id))
         if code != 0 and "No such container" not in err:
             log.warning("sandbox %s: release failed: %s", run_id, err.strip())
