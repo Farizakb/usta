@@ -326,7 +326,7 @@ Rejected: rolling summary every N steps (breaks cache constantly); provider-side
 - Format: `skills/<name>/SKILL.md` (frontmatter `name`, `description`; Anthropic-compatible) + `scripts/` + optional `check.py`.
 - Index (name + description) in the cached prefix; body via `skill.load`. Same path in both engines (SDK native skills off).
 - Scripts run in the sandbox; `skills/` mounted read-only at `/skills`.
-- Every output skill has `check.py` (page count, totals match source, glyph coverage, output language). These are the verifier's first-stage checks.
+- Every output skill has `check.py` (the file opens, has content, glyph coverage), printing `{ok, reasons, text_sample}`; the host runs `langcheck` on PDF/DOCX text samples and the final answer. These are the verifier's first-stage checks. Task-specific facts (totals match the source) are T2 checks against fixture ground truth.
 - Only repo-versioned, reviewed skills. No user-uploaded skills in v1.
 - v1 skills: `pdf-report`, `xlsx`, `docx`, `charts`, `company-glossary`, `email-reply-style`.
 - Metric: correct skill loaded per T2 task (each task lists its expected skills).

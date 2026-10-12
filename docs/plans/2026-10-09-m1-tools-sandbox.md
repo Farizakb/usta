@@ -4549,8 +4549,8 @@ git push
 
 ## M1 Done Criteria (SPEC §16)
 
-- [ ] CI is green on GitHub: `gitleaks`, `t1` (ruff, lint-imports, pytest on Postgres) and `t3a` (real gVisor, Trivy).
-- [ ] T3a is 100%: every test in `tests/sandbox/test_escapes.py` passes in CI (`runsc`) and locally (`runsc-kvm`).
+- [x] CI is green on GitHub: `gitleaks`, `t1` (ruff, lint-imports, pytest on Postgres) and `t3a` (real gVisor, Trivy). Run https://github.com/Farizakb/usta/actions/runs/38256976086 on f1a3865: green.
+- [x] T3a is 100%: every test in `tests/sandbox/test_escapes.py` passes in CI (`runsc`) and locally (`runsc-kvm`). Local `runsc-kvm` sandbox suite: 38 passed.
 - [ ] A T-c-style task on a real model ends `done` and verified. Its xlsx and PDF pass `check.py`, and `evals.checks.tc` reports no problems (Task 14).
 - [ ] The final whole-branch review is approved.
 - [ ] Evidence report: the files changed, the commands run, the test counts (default, `-m sandbox`), the CI link and the proof transcript. Known limitations are listed below.
@@ -4564,6 +4564,7 @@ git push
 - The `out/` cap is checked after each call. Within one call, `/out` (a bind mount) has no quota beyond the disk; `/tmp` is limited to 256 MB.
 - `langcheck` reads only the first 4,000 characters of each file's text.
 - The verifier always runs on `main`. The `main` vs `light` comparison is M3 (SPEC §9 item 4).
+- gVisor cuts a single stdout write over 64 KiB through `docker exec` to 65536 bytes with exit 0, and `truncated` is not set. Programs should write in smaller chunks; output is capped at 5,000 characters per stream anyway.
 - `code_exec` streams are cut at 5,000 characters each, until layer-1 offload (M3).
 - The T-c checker matches warehouse and model names verbatim (casefolded). An agent that abbreviates names fails the check.
 - `company-glossary` and `email-reply-style` are not built, and the promotion-rule script (SPEC §7) is not in M1.
