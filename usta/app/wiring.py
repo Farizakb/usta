@@ -26,7 +26,7 @@ from usta.tools.builtin.code_exec import make_code_exec
 from usta.tools.builtin.skill_load import make_skill_load
 from usta.tools.pipeline import ToolPipeline
 from usta.tools.registry import ToolRegistry
-from usta.verify.verifier import Verifier
+from usta.verify.verifier import CHECKS, Verifier
 from usta.worker import EventCallback, Worker
 
 
@@ -102,6 +102,14 @@ async def build_app(
     if sandbox_override is not None and profile.name != "test":
         raise ConfigError("P8: sandbox overrides are allowed only in the test profile")
     skills = load_skills(settings.skills_dir)
+    # a file type whose check.py is missing would silently go unverified
+    missing = [
+        f"verifier check missing: skills/{name}/check.py"
+        for name in sorted(set(CHECKS.values()))
+        if (skill := skills.get(name)) is None or not (skill.dir / "check.py").is_file()
+    ]
+    if missing:
+        raise ConfigError("startup refused:\n- " + "\n- ".join(missing))
     sandbox: SandboxPort
     if sandbox_override is not None:
         sandbox = sandbox_override

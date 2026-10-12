@@ -98,6 +98,21 @@ async def test_sandbox_overrides_are_refused_outside_the_test_profile() -> None:
         await build_app(settings, env={"OPENAI_API_KEY": "k"}, sandbox_override=FakeSandbox())
 
 
+async def test_startup_refuses_when_a_verifier_check_script_is_missing(tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    for name in ("pdf-report", "xlsx", "docx", "charts"):
+        d = skills / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: d\n---\nbody\n")
+        if name != "docx":
+            (d / "check.py").write_text("# stub")
+    settings = Settings(
+        profile="test", database_url="postgresql+asyncpg://x@127.0.0.1/x", skills_dir=skills
+    )
+    with pytest.raises(ConfigError, match=r"(?s)startup refused:.*docx.*check\.py"):
+        await build_app(settings, env={}, sandbox_override=FakeSandbox())
+
+
 def test_build_sandbox_uses_gvisor_runtime_except_in_test() -> None:
     dev = Settings(
         profile="dev-openai",
