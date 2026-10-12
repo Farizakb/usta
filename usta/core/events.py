@@ -16,6 +16,7 @@ EventType = Literal[
     "tool_result",
     "todo_updated",
     "step_done",
+    "verification",
     "parked",
     "finished",
 ]

@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from usta.core.messages import Message, ToolCall, ToolResult
+from usta.core.messages import Message, TextBlock, ToolCall, ToolResult
 from usta.core.model import ModelResponse
 
 
@@ -63,6 +63,8 @@ class RunState(BaseModel):
     active_seconds: float = 0.0
     todo: list[TodoItem] = Field(default_factory=list)
     pending: PendingQuestion | None = None
+    verify_failures: int = 0  # SPEC §9: one retry, then verification_failed
+    todo_reminded: bool = False  # ADR-016 planning reminder sent
 
     @classmethod
     def new(cls, *, id: str, user_id: str, task: str, engine: str, cost_cap_usd: float) -> RunState:
@@ -88,8 +90,11 @@ class RunState(BaseModel):
         self.turns += 1
         self.cost_usd += resp.cost_usd
 
-    def append_tool_results(self, results: list[ToolResult]) -> None:
-        self.messages.append(Message(role="user", content=tuple(results)))
+    def append_tool_results(self, results: list[ToolResult], note: str | None = None) -> None:
+        content: tuple = tuple(results)
+        if note:  # after the results: Anthropic wants tool_result blocks first
+            content += (TextBlock(text=note),)
+        self.messages.append(Message(role="user", content=content))
 
     def pending_tool_calls(self) -> list[ToolCall]:
         """Calls of the last assistant message that have no results yet (crash between checkpoints)."""

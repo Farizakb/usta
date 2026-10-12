@@ -77,3 +77,19 @@ def test_state_json_round_trip() -> None:
     again = RunState.model_validate_json(run.model_dump_json())
     assert again == run
     assert again.status == RunStatus.QUEUED
+
+
+def test_append_tool_results_with_a_note() -> None:
+    run = RunState.new(id="r", user_id="u", task="t", engine="own", cost_cap_usd=0.5)
+    run.append_tool_results([ToolResult(call_id="c1", content="ok")], note="Xatırlatma")
+    msg = run.messages[-1]
+    assert msg.role == "user" and msg.tool_results()[0].call_id == "c1"
+    assert isinstance(msg.content[-1], TextBlock) and msg.content[-1].text == "Xatırlatma"
+
+
+def test_old_checkpoints_load_with_defaults() -> None:
+    raw = RunState.new(id="r", user_id="u", task="t", engine="own", cost_cap_usd=0.5).model_dump()
+    raw.pop("verify_failures")
+    raw.pop("todo_reminded")
+    run = RunState.model_validate(raw)
+    assert run.verify_failures == 0 and run.todo_reminded is False

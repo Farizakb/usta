@@ -10,10 +10,10 @@ from collections.abc import AsyncIterator, Callable
 from usta.core.budget import Budget
 from usta.core.errors import ProviderQuotaError
 from usta.core.events import Event
-from usta.core.messages import ToolCall
+from usta.core.messages import Message, ToolCall
 from usta.core.model import ModelRequest, SystemBlock, ToolSpec
 from usta.core.run import PendingQuestion, RunState, RunStatus, StopReason
-from usta.engines.own.prompt import PROMPT_VERSION, SYSTEM_PROMPT
+from usta.engines.own.prompt import PLANNING_REMINDER, PROMPT_VERSION, SYSTEM_PROMPT, VERIFY_RETRY
 from usta.ports import RunContext
 
 log = logging.getLogger(__name__)
@@ -131,8 +131,36 @@ class OwnEngine:
                     return
                 calls = resp.tool_calls()
                 if not calls:
-                    yield await self._finish(run, ctx, timer, StopReason.DONE)
-                    return
+                    if ctx.verifier is None:
+                        yield await self._finish(run, ctx, timer, StopReason.DONE)
+                        return
+                    verdict = await ctx.verifier.check(run)
+                    run.cost_usd += verdict.cost_usd
+                    timer.tick()
+                    yield Event(
+                        run_id=run.id,
+                        type="verification",
+                        data={
+                            "ok": verdict.ok,
+                            "reasons": list(verdict.reasons),
+                            "attempt": run.verify_failures + 1,
+                            "cost_usd": verdict.cost_usd,
+                        },
+                    )
+                    if verdict.ok:
+                        yield await self._finish(run, ctx, timer, StopReason.DONE)
+                        return
+                    if run.verify_failures >= 1:
+                        detail = "; ".join(verdict.reasons)[:1000]
+                        yield await self._finish(
+                            run, ctx, timer, StopReason.VERIFICATION_FAILED, detail
+                        )
+                        return
+                    run.verify_failures += 1
+                    reasons = "\n".join(f"- {r}" for r in verdict.reasons)
+                    run.messages.append(Message.user_text(VERIFY_RETRY.format(reasons=reasons)))
+                    await ctx.store.checkpoint(run)
+                    continue
                 async for ev in self._execute(calls, run, ctx):
                     yield ev
                 timer.tick()
@@ -172,7 +200,11 @@ class OwnEngine:
                     "chars": len(outcome.result.content),
                 },
             )
-        run.append_tool_results(results)
+        note = None
+        if run.turns == 2 and not run.todo and not run.todo_reminded:  # ADR-016
+            run.todo_reminded = True
+            note = PLANNING_REMINDER
+        run.append_tool_results(results, note=note)
 
     async def _finish(
         self,

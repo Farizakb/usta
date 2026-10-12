@@ -4,9 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from usta import cli
 from usta.app.wiring import build_app
 from usta.cli import build_parser, format_event, main
 from usta.core.events import Event
+from usta.core.messages import Message, TextBlock
 from usta.core.model import Usage
 from usta.core.run import PendingQuestion, RunState, RunStatus, StopReason
 from usta.models.fake import FakeModel, call, reply
@@ -225,3 +227,27 @@ def test_invalid_user_id_is_a_clean_error(
     assert main(["user", "../x"], app_factory=factory) == 2
     err = capsys.readouterr().err
     assert err.startswith("usta: invalid user id") and "Traceback" not in err
+
+
+def test_format_verification_events() -> None:
+    ok = Event(
+        run_id="r",
+        type="verification",
+        data={"ok": True, "reasons": [], "attempt": 1, "cost_usd": 0.0},
+    )
+    bad = Event(
+        run_id="r",
+        type="verification",
+        data={"ok": False, "reasons": ["a", "b"], "attempt": 1, "cost_usd": 0.0},
+    )
+    assert format_event(ok) == "  ✓ verified"
+    assert format_event(bad) == "  ✗ verification failed: a; b"
+
+
+def test_verification_failed_still_prints_the_answer_with_a_warning(capsys) -> None:
+    run = RunState.new(id="r", user_id="u", task="t", engine="own", cost_cap_usd=0.5)
+    run.messages.append(Message(role="assistant", content=(TextBlock(text="Nəticə"),)))
+    run.finish(StopReason.VERIFICATION_FAILED, "PDF yoxdur")
+    assert cli._exit_code(run) == 1
+    out = capsys.readouterr().out
+    assert "⚠ not verified: PDF yoxdur" in out and "Nəticə" in out

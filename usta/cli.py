@@ -54,6 +54,10 @@ def format_event(ev: Event) -> str:
             return "  ☐ " + " | ".join(f"[{i['status']}] {i['content']}" for i in d["items"])
         case "step_done":
             return f"  · ${d['cost_usd']:.4f} so far"
+        case "verification":
+            if d["ok"]:
+                return "  ✓ verified"
+            return "  ✗ verification failed: " + "; ".join(d["reasons"])
         case "parked":
             question = (d.get("question") or {}).get("text", "")
             return f"⏸ {d['status']}: {question}  (usta answer {ev.run_id} yes|no)"
@@ -70,6 +74,9 @@ async def _print_event(ev: Event) -> None:
 def _exit_code(run: RunState) -> int:
     if run.is_parked:
         return 3
+    if run.is_finished and run.stop_reason == StopReason.VERIFICATION_FAILED:
+        print(f"\n⚠ not verified: {run.stop_detail}\n\n{run.final_text()}")  # SPEC §9
+        return 1
     if run.is_finished and run.stop_reason != StopReason.DONE:
         return 1
     if run.is_finished:

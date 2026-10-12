@@ -19,3 +19,12 @@ You complete multi-step tasks with the tools provided and finish with a short an
 """
 
 PROMPT_VERSION = "own-" + hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
+
+PLANNING_REMINDER = (
+    "Reminder: if this task has three or more steps, write a task list with the todo tool now "
+    "and keep it updated as you work."
+)
+VERIFY_RETRY = (
+    "Automatic verification found problems with your result:\n{reasons}\n"
+    "Fix them (use tools if needed), then give your final answer again."
+)
