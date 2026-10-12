@@ -90,14 +90,15 @@ def _cut_text(data: bytes) -> str:
     return _text(data)
 
 
-def _container_gone(code: int, stderr: str) -> bool:
+def _container_gone(code: int, stdout: str, stderr: str) -> bool:
     """The exec never ran because the container is gone or stopped (e.g. the sentry was OOM-killed).
 
-    The daemon reports it as "Error response from daemon"; before the daemon has noticed the death,
-    the runtime itself answers "OCI runtime exec failed".
+    The daemon reports it on stderr as "Error response from daemon"; before the daemon has noticed
+    the death, the runtime answers "OCI runtime exec failed", and docker relays that on stdout.
     """
-    return code != 0 and stderr.startswith(
-        ("Error response from daemon", "OCI runtime exec failed")
+    oci = "OCI runtime exec failed"
+    return code != 0 and (
+        stderr.startswith(("Error response from daemon", oci)) or stdout.startswith(oci)
     )
 
 
@@ -238,9 +239,10 @@ class DockerSandbox:
             raise
         code = proc.returncode
         assert code is not None
+        stdout = _cut_text(out) if out_cut else _text(out)
         stderr = _cut_text(err) if err_cut else _text(err)
-        if _container_gone(code, stderr):
-            log.warning("sandbox %s: %s", run_id, stderr.strip())
+        if _container_gone(code, stdout, stderr):
+            log.warning("sandbox %s: %s", run_id, (stderr or stdout).strip()[:300])
             return None
         if code in (124, 137):
             # timed out: stray children (fork bomb, backgrounded jobs) may still hold the nproc
@@ -249,7 +251,7 @@ class DockerSandbox:
             await self._destroy(run_id)
         return ExecResult(
             exit_code=code,
-            stdout=_cut_text(out) if out_cut else _text(out),
+            stdout=stdout,
             stderr=stderr,
             timed_out=code == 124,  # GNU timeout's exit code
             truncated=out_cut or err_cut,

@@ -45,15 +45,28 @@ def test_mount_paths_with_commas_are_refused() -> None:
 
 
 @pytest.mark.parametrize(
-    ("code", "stderr", "gone"),
+    ("code", "stdout", "stderr", "gone"),
     [
-        (1, "Error response from daemon: container abc is not running", True),
-        (126, 'OCI runtime exec failed: cannot execute in container "abc" in state stopped', True),
-        (0, "Error response from daemon: noise", False),
-        (1, "Traceback (most recent call last):", False),
+        (1, "", "Error response from daemon: container abc is not running", True),
+        (
+            126,
+            "",
+            'OCI runtime exec failed: cannot execute in container "abc" in state stopped',
+            True,
+        ),
+        # seen on CI (systrap): the runtime's message is relayed on stdout
+        (
+            126,
+            'OCI runtime exec failed: cannot execute in container "abc" in state stopped\r\n',
+            "",
+            True,
+        ),
+        (0, "", "Error response from daemon: noise", False),
+        (1, "", "Traceback (most recent call last):", False),
+        (1, "partial output", "", False),
     ],
 )
 def test_container_gone_covers_daemon_and_runtime_messages(
-    code: int, stderr: str, gone: bool
+    code: int, stdout: str, stderr: str, gone: bool
 ) -> None:
-    assert _container_gone(code, stderr) is gone
+    assert _container_gone(code, stdout, stderr) is gone
