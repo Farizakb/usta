@@ -138,7 +138,8 @@ async def test_fork_bomb_is_contained(box: Box) -> None:
         "import os\nwhile True:\n    try:\n        os.fork()\n    except OSError:\n        pass\n",
         timeout_s=5,
     )
-    assert res.timed_out or res.exit_code != 0
+    # nproc makes fork() fail, so the loop spins until the timeout kills it
+    assert res.timed_out or res.exit_code == 137
     assert res.duration_ms < 30_000
     assert (await box.run("print('ok')")).stdout == "ok\n"
 
@@ -147,7 +148,8 @@ async def test_memory_bomb_is_contained(box: Box) -> None:
     res = await box.run(
         "chunks = []\nwhile True:\n    chunks.append(bytearray(100 * 1024 * 1024))\n", timeout_s=30
     )
-    assert res.exit_code != 0
+    # the memory cap must stop it (MemoryError or OOM kill), not the 30 s timeout
+    assert res.exit_code != 0 and not res.timed_out and res.duration_ms < 30_000
     assert (await box.run("print('ok')")).stdout == "ok\n"
 
 
