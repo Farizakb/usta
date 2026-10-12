@@ -14,10 +14,21 @@ TASK="Bu Excel faylındakı cihaz siyahısını (files/cihazlar.xlsx) anbar qal�
 (files/anbar_qaliqlari.xlsx) müqayisə et və uyğunsuzluqları cədvəldə göstər. Cədvəli \
 out/uygunsuzluqlar.xlsx faylına yaz və nəticəni PDF hesabat kimi də hazırla."
 ID_FILE="$(mktemp)"
+# a non-zero run exit (e.g. verification failed) must not hide the evidence: keep going, report RC
+RC=0
+set +o pipefail
 uv run usta run "$TASK" | tee /dev/stderr | grep -oE '▶ run [0-9a-f-]+' | awk '{print $3}' > "$ID_FILE"
+RC="${PIPESTATUS[0]}"
+set -o pipefail
 RUN_ID="$(cat "$ID_FILE")"; rm -f "$ID_FILE"
 OUT="workspaces/m1proof/runs/$RUN_ID/out"
-ls -la "$OUT"
+ls -la "$OUT" || true
 XLSX="$(find "$OUT" -name '*.xlsx' | head -n 1)"
-uv run python -m evals.checks.tc "$XLSX" "$TRUTH"
+if [ -n "$XLSX" ]; then
+  uv run python -m evals.checks.tc "$XLSX" "$TRUTH" || echo "tc check failed"
+else
+  echo "no xlsx in $OUT"
+fi
 echo "run: $RUN_ID  truth: $TRUTH"
+echo "run exit: $RC"
+exit "$RC"
