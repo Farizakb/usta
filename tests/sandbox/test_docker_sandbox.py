@@ -44,6 +44,16 @@ async def test_timeout_kills_and_the_next_call_works(box: Box) -> None:
     assert (await box.run("print('ok')")).stdout == "ok\n"
 
 
+async def test_exec_recreates_a_container_that_died(box: Box) -> None:
+    # e.g. the sentry OOM-killed by a memory bomb: the container exists but is stopped
+    await box.run("print('warm')")
+    kill = await asyncio.create_subprocess_exec(
+        "docker", "kill", container_name(box.run_id), stdout=asyncio.subprocess.DEVNULL
+    )
+    assert await kill.wait() == 0
+    assert (await box.run("print('ok')")).stdout == "ok\n"
+
+
 async def test_timeout_keeps_the_run_exec_lock(box: Box) -> None:
     # the timed-out exec destroys the container while holding the lock; swapping the lock would
     # let a new caller run concurrently with callers already queued on the old one

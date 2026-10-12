@@ -90,6 +90,17 @@ def _cut_text(data: bytes) -> str:
     return _text(data)
 
 
+def _container_gone(code: int, stderr: str) -> bool:
+    """The exec never ran because the container is gone or stopped (e.g. the sentry was OOM-killed).
+
+    The daemon reports it as "Error response from daemon"; before the daemon has noticed the death,
+    the runtime itself answers "OCI runtime exec failed".
+    """
+    return code != 0 and stderr.startswith(
+        ("Error response from daemon", "OCI runtime exec failed")
+    )
+
+
 class DockerSandbox:
     def __init__(self, cfg: SandboxConfig, *, docker: str = "docker") -> None:
         self._cfg = cfg
@@ -228,7 +239,7 @@ class DockerSandbox:
         code = proc.returncode
         assert code is not None
         stderr = _cut_text(err) if err_cut else _text(err)
-        if code != 0 and stderr.startswith("Error response from daemon"):
+        if _container_gone(code, stderr):
             log.warning("sandbox %s: %s", run_id, stderr.strip())
             return None
         if code in (124, 137):

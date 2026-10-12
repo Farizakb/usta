@@ -4,7 +4,7 @@ import pytest
 
 from usta.core.errors import SandboxError
 from usta.core.workspace import RunDirs
-from usta.sandbox.docker import LABEL, DockerSandbox, SandboxConfig, container_name
+from usta.sandbox.docker import LABEL, DockerSandbox, SandboxConfig, _container_gone, container_name
 
 CFG = SandboxConfig(
     image="usta-sandbox:1", runtime="runsc", gvisor=True, skills_dir=Path("/repo/skills"),
@@ -42,3 +42,18 @@ def test_mount_paths_with_commas_are_refused() -> None:
     dirs = RunDirs(files=Path("/w/a,b/files"), out=Path("/w/a,b/out"))
     with pytest.raises(SandboxError, match="comma"):
         DockerSandbox(CFG).run_args("r1", dirs)
+
+
+@pytest.mark.parametrize(
+    ("code", "stderr", "gone"),
+    [
+        (1, "Error response from daemon: container abc is not running", True),
+        (126, 'OCI runtime exec failed: cannot execute in container "abc" in state stopped', True),
+        (0, "Error response from daemon: noise", False),
+        (1, "Traceback (most recent call last):", False),
+    ],
+)
+def test_container_gone_covers_daemon_and_runtime_messages(
+    code: int, stderr: str, gone: bool
+) -> None:
+    assert _container_gone(code, stderr) is gone
