@@ -36,3 +36,46 @@ jobs:
       - run: uv run ruff check .
       - run: uv run lint-imports
       - run: uv run pytest -q --tb=short
+
+  t3a:
+    # T3a (SPEC §15.1): fake model + real gVisor sandbox, every push. runsc's default platform
+    # (systrap) works on GitHub's VMs; WSL2 dev uses runsc-kvm (ADR-005).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install gVisor runsc (pinned, checksum-verified)
+        env:
+          RUNSC_RELEASE: "20260928.0"
+        run: |
+          set -euo pipefail
+          ARCH=$(uname -m)
+          # Since 2026 the release ships runsc inside gvisor.tar.bz2 (no bare runsc object).
+          URL="https://storage.googleapis.com/gvisor/releases/release/${RUNSC_RELEASE}/${ARCH}"
+          curl -fsSL -O "${URL}/gvisor.tar.bz2" -O "${URL}/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          tar -xjf gvisor.tar.bz2 runsc
+          sudo install -m 0755 runsc /usr/local/bin/runsc
+          sudo /usr/local/bin/runsc install
+          sudo systemctl restart docker
+          docker info --format '{{json .Runtimes}}' | grep -q '"runsc"'
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build sandbox image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: sandbox-image
+          tags: usta-sandbox:1
+          load: true
+          cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,scope=sandbox,mode=max
+      - name: Scan sandbox image (critical, fixable)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: usta-sandbox:1
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --locked
+      - run: uv run pytest -q --tb=short -m sandbox
+        env:
+          USTA_TEST_SANDBOX_RUNTIME: runsc
