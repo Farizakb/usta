@@ -23,7 +23,7 @@ set -o pipefail
 RUN_ID="$(cat "$ID_FILE")"; rm -f "$ID_FILE"
 OUT="workspaces/m1proof/runs/$RUN_ID/out"
 ls -la "$OUT" || true
-XLSX="$(find "$OUT" -name '*.xlsx' | head -n 1)"
+XLSX="$(find "$OUT" -name '*.xlsx' 2>/dev/null | head -n 1 || true)"
 if [ -n "$XLSX" ]; then
   uv run python -m evals.checks.tc "$XLSX" "$TRUTH" || echo "tc check failed"
 else
