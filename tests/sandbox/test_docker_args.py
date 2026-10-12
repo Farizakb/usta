@@ -70,3 +70,58 @@ def test_container_gone_covers_daemon_and_runtime_messages(
     code: int, stdout: str, stderr: str, gone: bool
 ) -> None:
     assert _container_gone(code, stdout, stderr) is gone
+
+
+@pytest.mark.parametrize(
+    ("inspect", "gone"),
+    [
+        ((0, "false\n", ""), True),  # stopped
+        ((1, "", "Error: No such object"), True),  # removed
+        ((0, "true\n", ""), False),  # user code merely printed the daemon's words
+    ],
+)
+async def test_gone_text_is_confirmed_with_inspect(
+    inspect: tuple[int, str, str], gone: bool
+) -> None:
+    sb = DockerSandbox(CFG)
+    seen: list[tuple[str, ...]] = []
+
+    async def fake(*args: str, timeout_s: float = 60.0) -> tuple[int, str, str]:
+        seen.append(args)
+        return inspect
+
+    sb._docker_cmd = fake  # type: ignore[method-assign]
+    text = "Error response from daemon: printed by user code"
+    assert await sb._confirmed_gone("r1", 1, "", text) is gone
+    assert seen == [("inspect", "-f", "{{.State.Running}}", container_name("r1"))]
+
+
+async def test_no_inspect_when_the_text_does_not_match() -> None:
+    sb = DockerSandbox(CFG)
+
+    async def boom(*args: str, timeout_s: float = 60.0) -> tuple[int, str, str]:
+        raise AssertionError("must not be called")
+
+    sb._docker_cmd = boom  # type: ignore[method-assign]
+    assert await sb._confirmed_gone("r1", 1, "", "Traceback") is False
+
+
+async def test_cancelling_a_docker_command_kills_the_client(tmp_path: Path) -> None:
+    import asyncio
+    import os
+
+    pidfile = tmp_path / "pid"
+    fake = tmp_path / "fakedocker"
+    fake.write_text(f"#!/bin/sh\necho $$ > {pidfile}\nexec sleep 300\n")
+    fake.chmod(0o755)
+    task = asyncio.create_task(DockerSandbox(CFG, docker=str(fake))._docker_cmd("ps"))
+    for _ in range(100):
+        if pidfile.exists() and pidfile.read_text().strip():
+            break
+        await asyncio.sleep(0.05)
+    pid = int(pidfile.read_text())
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)

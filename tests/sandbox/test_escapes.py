@@ -209,3 +209,36 @@ except OSError:
             await FILE_READ.fn({"path": f"out/{name}"}, ctx)
     listing = (await FILE_LIST.fn({"path": "out"}, ctx)).content
     assert "gizli" not in listing
+
+
+_SLEEPERS = """
+import os
+names = []
+for pid in filter(str.isdigit, os.listdir('/proc')):
+    try:
+        names.append(open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\\0', b' ').decode())
+    except OSError:
+        pass
+print(sum(1 for n in names if n.startswith('sleep 300')))
+"""
+
+
+async def test_leftover_processes_are_killed_after_each_exec(box: Box) -> None:
+    # a program that exits normally must not leave children burning CPU / holding nproc
+    res = await box.run(
+        "import subprocess\n"
+        "subprocess.Popen(['sleep', '300'], start_new_session=True)\n"
+        "print('left one behind')"
+    )
+    assert res.exit_code == 0 and "left one behind" in res.stdout
+    seen = await box.run(_SLEEPERS)
+    assert seen.stdout.strip() == "0", seen
+    # nproc (128) must be intact: 100 sleepers start, then die with the exec
+    res = await box.run(
+        "import subprocess\n"
+        "ps = [subprocess.Popen(['sleep', '300'], start_new_session=True) for _ in range(100)]\n"
+        "print(len(ps))"
+    )
+    assert res.exit_code == 0, res
+    assert (await box.run(_SLEEPERS)).stdout.strip() == "0"
+    assert (await box.run("print('ok')")).stdout == "ok\n"

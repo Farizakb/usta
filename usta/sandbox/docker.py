@@ -27,6 +27,12 @@ _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 _DOCKER_ENV = ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT", "XDG_RUNTIME_DIR")
 
 
+# After the program ends, kill whatever it left behind (`kill -1` skips PID 1 and the caller):
+# stray children would otherwise burn CPU, rewrite /out or exhaust nproc. Execs are serialized per
+# run, so nothing legitimate is running. `$0` is the timeout in seconds, `$@` the program argv.
+_EXEC_WRAPPER = 'timeout --kill-after=2 "$0" "$@"; rc=$?; kill -9 -1 2>/dev/null; exit $rc'
+
+
 def container_name(run_id: str) -> str:
     if not _RUN_ID.fullmatch(run_id):
         raise SandboxError(f"run id not usable as a container name: {run_id!r}")
@@ -150,10 +156,14 @@ class DockerSandbox:
         )  # fmt: skip
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout_s)
-        except TimeoutError as e:
-            proc.kill()
-            await proc.wait()
-            raise SandboxError(f"docker {args[0]} timed out after {timeout_s:.0f}s") from e
+        except BaseException as e:
+            # timed out or cancelled: do not leave the docker client running
+            if proc.returncode is None:
+                proc.kill()
+            await asyncio.shield(proc.wait())
+            if isinstance(e, TimeoutError):
+                raise SandboxError(f"docker {args[0]} timed out after {timeout_s:.0f}s") from e
+            raise
         assert proc.returncode is not None
         return proc.returncode, _text(out), _text(err)
 
@@ -196,7 +206,7 @@ class DockerSandbox:
         secs = str(max(1, int(timeout_s)))
         cmd = [
             self._docker, "exec", "--interactive", container_name(run_id),
-            "timeout", "--kill-after=2", secs, *argv,
+            "sh", "-c", _EXEC_WRAPPER, secs, *argv,
         ]  # fmt: skip
         env = {k: v for k in _DOCKER_ENV if (v := os.environ.get(k))}
         started = time.monotonic()
@@ -241,7 +251,7 @@ class DockerSandbox:
         assert code is not None
         stdout = _cut_text(out) if out_cut else _text(out)
         stderr = _cut_text(err) if err_cut else _text(err)
-        if _container_gone(code, stdout, stderr):
+        if await self._confirmed_gone(run_id, code, stdout, stderr):
             log.warning("sandbox %s: %s", run_id, (stderr or stdout).strip()[:300])
             return None
         if code in (124, 137):
@@ -257,6 +267,15 @@ class DockerSandbox:
             truncated=out_cut or err_cut,
             duration_ms=int((time.monotonic() - started) * 1000),
         )
+
+    async def _confirmed_gone(self, run_id: str, code: int, stdout: str, stderr: str) -> bool:
+        """_container_gone trusts output text, which user code can print; ask the daemon too."""
+        if not _container_gone(code, stdout, stderr):
+            return False
+        icode, iout, _ = await self._docker_cmd(
+            "inspect", "-f", "{{.State.Running}}", container_name(run_id)
+        )
+        return icode != 0 or iout.strip() != "true"
 
     async def release(self, run_id: str) -> None:
         self._locks.pop(run_id, None)
