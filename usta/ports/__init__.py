@@ -11,6 +11,7 @@ from usta.core.model import ModelCaps, ModelRequest, ModelResponse, ToolSpec
 from usta.core.run import RunState, RunStatus
 from usta.core.sandbox import ExecResult
 from usta.core.tools import ToolOutcome
+from usta.core.verify import VerifyResult
 from usta.core.workspace import RunDirs
 
 
@@ -67,6 +68,12 @@ class SandboxPort(Protocol):
     async def reap(self, keep: Collection[str]) -> list[str]: ...
 
 
+class VerifierPort(Protocol):
+    """Runs after the model stops calling tools; identical for both engines (SPEC §9)."""
+
+    async def check(self, run: RunState) -> VerifyResult: ...
+
+
 @dataclass(frozen=True)
 class RunContext:
     """What an engine gets; identical for both engines (SPEC §3.3). The run token (M2) is added when it exists."""
@@ -75,6 +82,7 @@ class RunContext:
     tools: ToolPipelinePort
     store: RunStore
     skill_index: str = ""  # SkillSet.index_text(); joins the cached prefix (SPEC §7.1)
+    verifier: VerifierPort | None = None  # None: runs finish `done` unchecked (tests only)
 
 
 class EnginePort(Protocol):
