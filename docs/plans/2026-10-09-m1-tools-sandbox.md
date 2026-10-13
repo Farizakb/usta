@@ -4551,9 +4551,9 @@ git push
 
 - [x] CI is green on GitHub: `gitleaks`, `t1` (ruff, lint-imports, pytest on Postgres) and `t3a` (real gVisor, Trivy). Run https://github.com/Farizakb/usta/actions/runs/38256976086 on f1a3865: green.
 - [x] T3a is 100%: every test in `tests/sandbox/test_escapes.py` passes in CI (`runsc`) and locally (`runsc-kvm`). Local `runsc-kvm` sandbox suite: 38 passed.
-- [ ] A T-c-style task on a real model ends `done` and verified. Its xlsx and PDF pass `check.py`, and `evals.checks.tc` reports no problems (Task 14).
-- [ ] The final whole-branch review is approved.
-- [ ] Evidence report: the files changed, the commands run, the test counts (default, `-m sandbox`), the CI link and the proof transcript. Known limitations are listed below.
+- [x] A T-c-style task on a real model ends `done` and verified. Its xlsx and PDF pass `check.py`, and `evals.checks.tc` reports no problems (Task 14). Run `deafd444` on `dev-openai`: 13 turns, $0.0026, `T-c check passed` (`docs/milestones/m1-proof.md`).
+- [x] The final whole-branch review is approved (Opus: approved with fixes; the fixes landed in 1dfa934–61e0b4b; the scoped re-review is clean).
+- [x] Evidence report: the files changed, the commands run, the test counts (default, `-m sandbox`), the CI link and the proof transcript. Known limitations are listed below. See `docs/milestones/m1-proof.md` (default 335 passed, sandbox 39 passed on `runsc-kvm`).
 
 ## Known Limitations Carried Out of M1
 
@@ -4569,4 +4569,5 @@ git push
 - The T-c checker matches warehouse and model names verbatim (casefolded). An agent that abbreviates names fails the check.
 - `company-glossary` and `email-reply-style` are not built, and the promotion-rule script (SPEC §7) is not in M1.
 - The Trivy scan runs only in CI, not before a local build.
+- LiteLLM prints its "Provider List" help banner on stderr several times per call for `gpt-6-luna` (its cost lookup does not know the model). This is cosmetic noise; costs come from `config/models.toml`.
 - There is one container start per run (about 0.6 s) and one matplotlib font-cache build per run (about 1–3 s, on the first chart).
