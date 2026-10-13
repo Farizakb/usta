@@ -4569,5 +4569,10 @@ git push
 - The T-c checker matches warehouse and model names verbatim (casefolded). An agent that abbreviates names fails the check.
 - `company-glossary` and `email-reply-style` are not built, and the promotion-rule script (SPEC §7) is not in M1.
 - The Trivy scan runs only in CI, not before a local build.
+- **Carried to M2/M3, from an external review (2026-10-13); not built yet:**
+  - **Before M3 (cost):** the Anthropic adapter puts `cache_control` only on system blocks, so the message history is never cached on `dev-api` or prod, and every turn pays full input price for it. Fix: one breakpoint on the last block of the latest message. OpenAI caches automatically (the proof run had an 86% cache-read share).
+  - **M2 (P9):** resume re-runs every call of the last assistant message (`RunState.pending_tool_calls`), including calls that already ran before a crash in the middle of a batch. The `intent`/`done` rows in `tool_calls` are written but not read on resume. That is harmless for M1's tools and must be fixed before `email.send` (`unknown_outcome`, T1 crash test).
+  - **M2 (approvals):** the loop does not check `run.status` after `_execute`. Once an `ask` verdict can park the run inside a tool call, it must checkpoint and return instead of calling the model again.
+  - **M3:** `max_tokens` ends the run on its first hit. Consider one recovery retry. A context-length error ends the run as `error` until the ADR-017 context layers land.
 - LiteLLM prints its "Provider List" help banner on stderr several times per call for `gpt-6-luna` (its cost lookup does not know the model). This is cosmetic noise; costs come from `config/models.toml`.
 - There is one container start per run (about 0.6 s) and one matplotlib font-cache build per run (about 1–3 s, on the first chart).
