@@ -1,6 +1,6 @@
 """Protocols between the core and everything else (P5). Only usta.app wires concrete classes."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Collection, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -9,7 +9,10 @@ from usta.core.events import Event
 from usta.core.messages import ToolCall
 from usta.core.model import ModelCaps, ModelRequest, ModelResponse, ToolSpec
 from usta.core.run import RunState, RunStatus
+from usta.core.sandbox import ExecResult
 from usta.core.tools import ToolOutcome
+from usta.core.verify import VerifyResult
+from usta.core.workspace import RunDirs
 
 
 class ModelPort(Protocol):
@@ -47,14 +50,39 @@ class ToolPipelinePort(Protocol):
     async def handle(self, call: ToolCall, run: RunState) -> ToolOutcome: ...
 
 
+class SandboxPort(Protocol):
+    """One container per run, a fresh process per exec (SPEC §10, ADR-024)."""
+
+    async def exec(
+        self,
+        run_id: str,
+        dirs: RunDirs,
+        argv: Sequence[str],
+        *,
+        stdin: str = "",
+        timeout_s: float = 60.0,
+    ) -> ExecResult: ...
+
+    async def release(self, run_id: str) -> None: ...
+
+    async def reap(self, keep: Collection[str]) -> list[str]: ...
+
+
+class VerifierPort(Protocol):
+    """Runs after the model stops calling tools; identical for both engines (SPEC §9)."""
+
+    async def check(self, run: RunState) -> VerifyResult: ...
+
+
 @dataclass(frozen=True)
 class RunContext:
-    """What an engine gets; identical for both engines (SPEC §3.3). Skills (M1) and the
-    run token (M2) are added when they exist."""
+    """What an engine gets; identical for both engines (SPEC §3.3). The run token (M2) is added when it exists."""
 
     models: ModelGateway
     tools: ToolPipelinePort
     store: RunStore
+    skill_index: str = ""  # SkillSet.index_text(); joins the cached prefix (SPEC §7.1)
+    verifier: VerifierPort | None = None  # None: runs finish `done` unchecked (tests only)
 
 
 class EnginePort(Protocol):

@@ -36,3 +36,7 @@ class UnknownUser(UstaError):
 
 class ToolInputError(UstaError):
     """Tool arguments are invalid; reported to the model as an error result."""
+
+
+class SandboxError(UstaError):
+    """Docker or the sandbox runtime failed (not the user's code)."""

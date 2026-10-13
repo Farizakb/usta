@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.fakes import InMemoryStore, make_context
+from tests.fakes import FakeSandbox, InMemoryStore, make_context
 from usta.core.audit import ModelCallRecord
 from usta.core.budget import Budget
 from usta.core.errors import UserBudgetExceeded
@@ -17,7 +17,7 @@ from usta.worker import Worker
 BUDGET = Budget(cost_step_usd=0.5)
 
 
-def make_worker(script, tmp_path: Path, *, cap: float = 10.0, on_event=None):
+def make_worker(script, tmp_path: Path, *, cap: float = 10.0, on_event=None, sandbox=None):
     store = InMemoryStore()
     ctx, model = make_context(script, store, tmp_path)
     worker = Worker(
@@ -28,6 +28,7 @@ def make_worker(script, tmp_path: Path, *, cap: float = 10.0, on_event=None):
         engine_name="own",
         user_monthly_cap_usd=cap,
         on_event=on_event,
+        sandbox=sandbox,
     )
     return worker, store, model, ctx
 
@@ -183,3 +184,19 @@ async def test_recover_isolates_a_failing_run(tmp_path: Path) -> None:
     assert set(ids) == {first.id, second.id}
     assert (await store.load(second.id)).stop_reason == StopReason.DONE
     assert not (await store.load(first.id)).is_finished
+
+
+async def test_sandbox_is_released_when_a_run_finishes_or_parks(tmp_path: Path) -> None:
+    sb = FakeSandbox()
+    worker, store, _, _ = make_worker([reply("ok")], tmp_path, sandbox=sb)
+    run = await worker.submit("u1", "Tapşırıq")
+    await worker.execute(run.id)
+    assert sb.released == [run.id]
+
+
+async def test_recover_reaps_containers_of_runs_not_resuming(tmp_path: Path) -> None:
+    sb = FakeSandbox()
+    worker, store, _, _ = make_worker([reply("ok")], tmp_path, sandbox=sb)
+    run = await worker.submit("u1", "Tapşırıq")
+    await worker.recover()
+    assert sb.reaped_keep == [{run.id}]

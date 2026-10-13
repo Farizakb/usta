@@ -1,22 +1,33 @@
 from pathlib import Path
 
-from tests.fakes import FakeClock, InMemoryStore, make_context
+import pytest
+
+from tests.fakes import ECHO, FakeClock, FakeVerifier, InMemoryStore, make_context
 from usta.core.budget import Budget
 from usta.core.errors import ProviderQuotaError
-from usta.core.messages import Message, ToolCall
+from usta.core.messages import Message, TextBlock, ToolCall
 from usta.core.model import ModelResponse, Usage
 from usta.core.run import RunState, RunStatus, StopReason
-from usta.engines.own.loop import OwnEngine
-from usta.engines.own.prompt import PROMPT_VERSION
+from usta.core.verify import VerifyResult
+from usta.engines.own.loop import OwnEngine, build_request
+from usta.engines.own.prompt import PLANNING_REMINDER, PROMPT_VERSION
 from usta.models.fake import call, reply
+from usta.tools.builtin.todo import TODO
 
 
 async def drive(
-    script, tmp_path: Path, *, budget: Budget | None = None, clock=None, run: RunState | None = None
+    script,
+    tmp_path: Path,
+    *,
+    budget: Budget | None = None,
+    clock=None,
+    run: RunState | None = None,
+    verifier=None,
+    tools=(ECHO,),
 ):
     budget = budget or Budget()
     store = InMemoryStore()
-    ctx, model = make_context(script, store, tmp_path)
+    ctx, model = make_context(script, store, tmp_path, tools=tools, verifier=verifier)
     run = run or RunState.new(
         id="r1", user_id="u1", task="Tapşırıq", engine="own", cost_cap_usd=budget.cost_step_usd
     )
@@ -187,3 +198,86 @@ async def test_tool_audit_sink_records_executed_calls(tmp_path: Path) -> None:
         ("test.echo", "intent"),
         ("test.echo", "done"),
     ]
+
+
+def test_skill_index_is_a_second_cached_system_block() -> None:
+    run = RunState.new(id="r1", user_id="u1", task="t", engine="own", cost_cap_usd=0.5)
+    plain = build_request(run, ())
+    assert len(plain.system) == 1 and plain.system[0].cache
+    with_index = build_request(run, (), skill_index="Skills:\n- charts: PNG charts")
+    assert [b.cache for b in with_index.system] == [False, True]
+    assert with_index.system[1].text.startswith("Skills:")
+    assert with_index.prompt_version.startswith(PROMPT_VERSION + "+sk-")
+    assert (
+        with_index.prompt_version
+        == build_request(run, (), skill_index="Skills:\n- charts: PNG charts").prompt_version
+    )
+
+
+PASS = VerifyResult(ok=True)
+
+
+def fail(*reasons: str, cost: float = 0.0) -> VerifyResult:
+    return VerifyResult(ok=False, reasons=reasons, cost_usd=cost)
+
+
+async def test_verified_run_finishes_done(tmp_path: Path) -> None:
+    v = FakeVerifier([PASS])
+    run, events, _, _ = await drive([reply("Hazırdır.")], tmp_path, verifier=v)
+    assert run.stop_reason == StopReason.DONE
+    types = [e.type for e in events]
+    assert types[-2:] == ["verification", "finished"]
+    assert events[-2].data == {"ok": True, "reasons": [], "attempt": 1, "cost_usd": 0.0}
+
+
+async def test_failed_verification_retries_once_with_reasons(tmp_path: Path) -> None:
+    v = FakeVerifier([fail("PDF yoxdur"), PASS])
+    run, events, model, _ = await drive(
+        [reply("Bitdi."), reply("İndi bitdi.")], tmp_path, verifier=v
+    )
+    assert run.stop_reason == StopReason.DONE and run.verify_failures == 1
+    retry = model.requests[1].messages[-1]
+    assert retry.role == "user" and "- PDF yoxdur" in retry.text()
+    assert [e.data["attempt"] for e in events if e.type == "verification"] == [1, 2]
+
+
+async def test_second_failure_stops_verification_failed(tmp_path: Path) -> None:
+    v = FakeVerifier([fail("a"), fail("b", "c")])
+    run, _, _, store = await drive([reply("1"), reply("2")], tmp_path, verifier=v)
+    assert run.stop_reason == StopReason.VERIFICATION_FAILED and run.stop_detail == "b; c"
+    assert (await store.load("r1")).stop_reason == StopReason.VERIFICATION_FAILED
+    assert run.final_text() == "2"  # the output is still there to show with a warning
+
+
+async def test_long_reasons_are_capped_in_the_retry_message(tmp_path: Path) -> None:
+    v = FakeVerifier([fail("x" * 5000), PASS])
+    _, _, model, _ = await drive([reply("Bitdi."), reply("İndi bitdi.")], tmp_path, verifier=v)
+    retry = model.requests[1].messages[-1].text()
+    assert "x" * 1000 in retry and "x" * 1001 not in retry
+
+
+async def test_verifier_cost_counts_toward_the_run(tmp_path: Path) -> None:
+    v = FakeVerifier([VerifyResult(ok=True, cost_usd=0.07)])
+    run, _, _, _ = await drive([reply("ok")], tmp_path, verifier=v)
+    assert run.cost_usd == pytest.approx(0.30 + 0.07)
+
+
+async def test_planning_reminder_once_on_turn_two_without_todo(tmp_path: Path) -> None:
+    script = [
+        call("test.echo", {"text": "1"}),
+        call("test.echo", {"text": "2"}),
+        call("test.echo", {"text": "3"}),
+        reply("ok"),
+    ]
+    run, _, model, _ = await drive(script, tmp_path)
+    after_turn = [m for m in run.messages if m.role == "user"][1:]  # skip the task
+    notes = [m.content[-1].text for m in after_turn if isinstance(m.content[-1], TextBlock)]
+    assert notes == [PLANNING_REMINDER] and run.todo_reminded
+    assert isinstance(after_turn[1].content[-1], TextBlock)  # attached to turn 2's results
+
+
+async def test_no_planning_reminder_when_todo_exists(tmp_path: Path) -> None:
+    items = {"items": [{"content": "Faylı oxu", "status": "in_progress"}]}
+    script = [call("todo", items), call("test.echo", {"text": "2"}), reply("ok")]
+    run, _, _, _ = await drive(script, tmp_path, tools=(ECHO, TODO))
+    assert not run.todo_reminded

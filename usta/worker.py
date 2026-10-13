@@ -10,7 +10,7 @@ from usta.core.budget import Budget
 from usta.core.errors import UserBudgetExceeded
 from usta.core.events import Event
 from usta.core.run import RunState, RunStatus, StopReason
-from usta.ports import EnginePort, RunContext, RunStore
+from usta.ports import EnginePort, RunContext, RunStore, SandboxPort
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class Worker:
         engine_name: str,
         user_monthly_cap_usd: float,
         on_event: EventCallback | None = None,
+        sandbox: SandboxPort | None = None,
     ) -> None:
         self._store = store
         self._engine = engine
@@ -36,6 +37,7 @@ class Worker:
         self._engine_name = engine_name
         self._user_cap = user_monthly_cap_usd
         self._on_event = on_event
+        self._sandbox = sandbox
         self._active: set[str] = set()  # in-process guard; cross-process exclusion is deferred
 
     async def submit(self, user_id: str, task: str) -> RunState:
@@ -69,9 +71,20 @@ class Worker:
         run = await self._store.load(run_id)
         if run.is_finished or run.is_parked:
             return run
-        async for event in self._engine.run(run, self._ctx):
-            await self._emit(event, run.user_id)
+        try:
+            async for event in self._engine.run(run, self._ctx):
+                await self._emit(event, run.user_id)
+        finally:
+            await self._release(run.id)  # SPEC §10: destroyed on park or finish
         return run
+
+    async def _release(self, run_id: str) -> None:
+        if self._sandbox is None:
+            return
+        try:
+            await self._sandbox.release(run_id)
+        except Exception:
+            logger.exception("sandbox release failed for run %s", run_id)
 
     async def answer_budget(self, run_id: str, approve: bool) -> RunState:
         if run_id in self._active:
@@ -111,8 +124,14 @@ class Worker:
         return run
 
     async def recover(self) -> list[str]:
-        """On startup: resume runs a crash left running or queued (ADR-014 rule 3)."""
+        """On startup: resume runs a crash left running or queued (ADR-014 rule 3), after
+        removing sandbox containers of runs that are not resuming."""
         run_ids = await self._store.ids_with_status(RunStatus.RUNNING, RunStatus.QUEUED)
+        if self._sandbox is not None:
+            try:
+                await self._sandbox.reap(keep=set(run_ids))
+            except Exception:
+                logger.exception("recover: sandbox reap failed; continuing")
         for run_id in run_ids:
             try:
                 await self.execute(run_id)

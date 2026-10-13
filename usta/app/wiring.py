@@ -17,11 +17,16 @@ from usta.engines.own.loop import OwnEngine
 from usta.models.caps import ModelEntry, load_catalog
 from usta.models.fake import FakeModel
 from usta.models.gateway import Gateway
-from usta.ports import ModelPort, RunContext
+from usta.ports import ModelPort, RunContext, SandboxPort
+from usta.sandbox.docker import DockerSandbox, SandboxConfig
+from usta.skills import load_skills
 from usta.store.pg import PgRunStore
 from usta.tools.builtin import builtin_tools
+from usta.tools.builtin.code_exec import make_code_exec
+from usta.tools.builtin.skill_load import make_skill_load
 from usta.tools.pipeline import ToolPipeline
 from usta.tools.registry import ToolRegistry
+from usta.verify.verifier import CHECKS, Verifier
 from usta.worker import EventCallback, Worker
 
 
@@ -65,11 +70,26 @@ def build_model(
     return FakeModel(model_id=model_id, caps=entry.caps)  # guards allow this only in `test`
 
 
+def build_sandbox(profile: Profile, settings: Settings) -> DockerSandbox:
+    gvisor = profile.sandbox == "gvisor"  # docker_hardened (runc) is test-only; guards enforce it
+    return DockerSandbox(
+        SandboxConfig(
+            image=profile.sandbox_image,
+            runtime=settings.gvisor_runtime if gvisor else "runc",
+            gvisor=gvisor,
+            skills_dir=settings.skills_dir.resolve(),
+            uid=os.getuid(),
+            gid=os.getgid(),
+        )
+    )
+
+
 async def build_app(
     settings: Settings,
     *,
     env: Mapping[str, str] = os.environ,
     model_overrides: Mapping[Role, ModelPort] | None = None,
+    sandbox_override: SandboxPort | None = None,
     on_event: EventCallback | None = None,
 ) -> App:
     profile = load_profile(settings.profile, settings.config_dir)
@@ -79,6 +99,25 @@ async def build_app(
         raise ConfigError("engine=sdk arrives in M3; use an engine=own profile")
     if model_overrides and profile.name != "test":
         raise ConfigError("P8: model overrides are allowed only in the test profile")
+    if sandbox_override is not None and profile.name != "test":
+        raise ConfigError("P8: sandbox overrides are allowed only in the test profile")
+    skills = load_skills(settings.skills_dir)
+    # a file type whose check.py is missing would silently go unverified
+    missing = [
+        f"verifier check missing: skills/{name}/check.py"
+        for name in sorted(set(CHECKS.values()))
+        if (skill := skills.get(name)) is None or not (skill.dir / "check.py").is_file()
+    ]
+    if missing:
+        raise ConfigError("startup refused:\n- " + "\n- ".join(missing))
+    sandbox: SandboxPort
+    if sandbox_override is not None:
+        sandbox = sandbox_override
+    else:
+        docker_sandbox = build_sandbox(profile, settings)
+        if problems := await docker_sandbox.preflight():
+            raise ConfigError("startup refused:\n- " + "\n- ".join(problems))
+        sandbox = docker_sandbox
 
     overrides = model_overrides or {}
     models: dict[Role, ModelPort] = {
@@ -94,8 +133,11 @@ async def build_app(
     gateway = Gateway(
         models, {m.model_id: catalog[m.model_id].price for m in models.values()}, audit=store
     )
+    tools = [*builtin_tools(), make_code_exec(sandbox)]
+    if skills.names():
+        tools.append(make_skill_load(skills))
     pipeline = ToolPipeline(
-        ToolRegistry(builtin_tools()), audit=store, workspace_root=settings.workspace_root
+        ToolRegistry(tools), audit=store, workspace_root=settings.workspace_root
     )
     b = profile.budget
     budget = Budget(
@@ -103,13 +145,21 @@ async def build_app(
         cost_step_usd=b.cost_cap_usd,
         max_active_seconds=b.max_active_seconds,
     )
+    ctx = RunContext(
+        models=gateway,
+        tools=pipeline,
+        store=store,
+        skill_index=skills.index_text(),
+        verifier=Verifier(sandbox, gateway, settings.workspace_root, skills),
+    )
     worker = Worker(
         store,
         OwnEngine(budget),
-        RunContext(models=gateway, tools=pipeline, store=store),
+        ctx,
         budget,
         engine_name="own",
         user_monthly_cap_usd=b.user_monthly_cap_usd,
         on_event=on_event,
+        sandbox=sandbox,
     )
     return App(profile=profile, db=db, store=store, worker=worker)

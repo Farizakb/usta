@@ -27,3 +27,6 @@ gVisor fails in WSL2 (then gVisor on VM only; dev/prod parity recorded as broken
 - Speed: container start ~0.6 s on both; a syscall-heavy loop (200k `getpid`) took 13.7 s on ptrace vs 1.1 s on kvm.
 - Dev setup: `/etc/docker/daemon.json` registers `runsc` (`--platform=ptrace`) and `runsc-kvm` (`--platform=kvm`). The sandbox (M1) should default to `runsc-kvm` in dev, with `runsc` (ptrace) as the fallback.
 - Production VM platform is not decided yet; it is checked when the VM is set up (systrap or kvm, depending on the VM's nested-virtualization support).
+
+## Implementation (M1)
+- Dev sets `USTA_GVISOR_RUNTIME=runsc-kvm`. CI uses `runsc` (systrap) on GitHub VMs, so the T3a suite runs on both platforms.

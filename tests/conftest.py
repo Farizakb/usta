@@ -1,13 +1,21 @@
 """Shared fixtures. Postgres tests need USTA_TEST_DATABASE_URL: an owner role on a throwaway DB."""
 
 import asyncio
+import json
 import os
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from usta.core.sandbox import ExecResult
+from usta.core.workspace import RunDirs
+from usta.sandbox.docker import DockerSandbox, SandboxConfig
 
 TABLES = "users, runs, run_checkpoints, model_calls, tool_calls, run_events"
 
@@ -64,3 +72,52 @@ async def app_role_engine(clean_db: str):
 
     yield engine
     await engine.dispose()
+
+
+SANDBOX_IMAGE = os.environ.get("USTA_TEST_SANDBOX_IMAGE", "usta-sandbox:1")
+SANDBOX_RUNTIME = os.environ.get("USTA_TEST_SANDBOX_RUNTIME", "runsc")
+
+
+@pytest.fixture
+def sandbox_config(tmp_path: Path) -> SandboxConfig:
+    skills = Path("skills").resolve()
+    if not skills.is_dir():
+        skills = tmp_path / "skills"
+        skills.mkdir()
+    return SandboxConfig(
+        image=SANDBOX_IMAGE,
+        runtime=SANDBOX_RUNTIME,
+        gvisor=SANDBOX_RUNTIME != "runc",
+        skills_dir=skills,
+        uid=os.getuid(),
+        gid=os.getgid(),
+    )
+
+
+@dataclass
+class Box:
+    sandbox: DockerSandbox
+    run_id: str
+    dirs: RunDirs
+
+    async def run(self, code: str, timeout_s: float = 60.0) -> ExecResult:
+        return await self.sandbox.exec(
+            self.run_id, self.dirs, ("python", "-"), stdin=code, timeout_s=timeout_s
+        )
+
+    async def check(self, skill: str, rel: str) -> dict:
+        res = await self.sandbox.exec(
+            self.run_id, self.dirs, ("python", f"/skills/{skill}/check.py", f"/out/{rel}")
+        )
+        assert res.exit_code == 0, res.stderr
+        return json.loads(res.stdout.strip().splitlines()[-1])
+
+
+@pytest.fixture
+async def box(tmp_path: Path, sandbox_config: SandboxConfig):
+    dirs = RunDirs(files=tmp_path / "files", out=tmp_path / "out")
+    dirs.files.mkdir()
+    dirs.out.mkdir()
+    b = Box(DockerSandbox(sandbox_config), f"t-{uuid.uuid4().hex[:12]}", dirs)
+    yield b
+    await b.sandbox.release(b.run_id)

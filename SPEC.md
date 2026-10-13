@@ -326,7 +326,7 @@ Rejected: rolling summary every N steps (breaks cache constantly); provider-side
 - Format: `skills/<name>/SKILL.md` (frontmatter `name`, `description`; Anthropic-compatible) + `scripts/` + optional `check.py`.
 - Index (name + description) in the cached prefix; body via `skill.load`. Same path in both engines (SDK native skills off).
 - Scripts run in the sandbox; `skills/` mounted read-only at `/skills`.
-- Every output skill has `check.py` (page count, totals match source, glyph coverage, output language). These are the verifier's first-stage checks.
+- Every output skill has `check.py` (the file opens, has content, glyph coverage), printing `{ok, reasons, text_sample}`; the host runs `langcheck` on PDF/DOCX text samples and the final answer. These are the verifier's first-stage checks. Task-specific facts (totals match the source) are T2 checks against fixture ground truth.
 - Only repo-versioned, reviewed skills. No user-uploaded skills in v1.
 - v1 skills: `pdf-report`, `xlsx`, `docx`, `charts`, `company-glossary`, `email-reply-style`.
 - Metric: correct skill loaded per T2 task (each task lists its expected skills).
@@ -554,11 +554,12 @@ Runs in Usta **after the engine reports done**, identical for both engines.
 ## 20. Open items (resolved during build, not design)
 
 1. gVisor-in-WSL2 spike result (M0 day 1). **Result: passed 2026-10-08 (ADR-005) on runsc platforms `kvm` (dev default, fastest) and `ptrace`; the default `systrap` fails in WSL2. Production VM platform is decided at VM setup.**
-2. Free-tier model for `dev-free` (pick the best tool-calling model available on a free tier at M0). **Result 2026-10-09: the dev own-loop model is now `openai/gpt-6-luna` via LiteLLM (profile `dev-openai`; user decision; OpenAI API data is not used for training by default; about $0.01 per smoke). `dev-free` (Gemini free tier) stays as the $0 option.**
+2. Free-tier model for `dev-free` (pick the best tool-calling model available on a free tier at M0). **Result 2026-10-09: the dev own-loop model is now `openai/gpt-6-luna` via LiteLLM (profile `dev-openai`; user decision; OpenAI API data is not used for training by default; about $0.01 per smoke; measured 2026-10-13: the M1 T-c proof run cost $0.0026 over 13 turns plus one verifier call). `dev-free` (Gemini free tier) stays as the $0 option.**
 3. Measured cost per task → recalibrate run budget (after M3).
 4. Tavily vs Brave on 30 Azerbaijani queries (M2; cut-able).
 5. Which official reference MCP server is the third-party proof (M2).
 6. Manager OK to publish.
+7. M1 proof recorded in `docs/milestones/m1-proof.md`.
 
 ## 21. ADR index
 

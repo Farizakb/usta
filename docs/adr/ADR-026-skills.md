@@ -16,3 +16,7 @@ Metric: correct skill loaded per T2 task. User-uploaded skills rejected (injecti
 
 ## Revisit when
 Users need their own skills (requires review flow).
+
+## Implementation (M1)
+- Frontmatter is limited to `name` and `description`; other keys are rejected.
+- `check.py` contract: `python check.py <file>` prints one JSON line `{"ok": bool, "reasons": [str], "text_sample": str}`; it exits 0 when the file was checked and 2 on a usage error. It checks that the file opens, has content, and glyph coverage. The host runs `langcheck` on the PDF/DOCX `text_sample` and on the final answer.
