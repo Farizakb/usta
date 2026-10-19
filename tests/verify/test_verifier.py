@@ -65,7 +65,7 @@ async def test_no_files_and_llm_pass(tmp_path: Path) -> None:
 
 async def test_failed_file_check_skips_the_llm(tmp_path: Path) -> None:
     def handler(run_id, dirs, argv, stdin):
-        assert argv == ("python", "/skills/pdf-report/check.py", "/out/hesabat.pdf")
+        assert argv == ("python", "-I", "/skills/pdf-report/check.py", "/out/hesabat.pdf")
         return check_json(False, ["uses built-in PDF fonts: Helvetica"])
 
     v, run, out, _, model = make(tmp_path, [], handler)

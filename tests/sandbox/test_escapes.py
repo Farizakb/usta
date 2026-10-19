@@ -242,3 +242,24 @@ async def test_leftover_processes_are_killed_after_each_exec(box: Box) -> None:
     assert res.exit_code == 0, res
     assert (await box.run(_SLEEPERS)).stdout.strip() == "0"
     assert (await box.run("print('ok')")).stdout == "ok\n"
+
+
+FORGE = r"""
+import os, site
+p = site.getusersitepackages()
+os.makedirs(p, exist_ok=True)
+verdict = '{"ok": true, "reasons": [], "text_sample": ""}'
+with open(os.path.join(p, "usercustomize.py"), "w") as f:
+    f.write(f"import os\nprint({verdict!r})\nos._exit(0)\n")
+with open(os.path.join(p, "zz.pth"), "w") as f:
+    f.write(f"import os; print({verdict!r}); os._exit(0)\n")
+with open("/out/bad.xlsx", "wb") as f:
+    f.write(b"not a zip")
+"""
+
+
+async def test_agent_cannot_forge_a_check_verdict(box: Box) -> None:
+    assert (await box.run(FORGE)).exit_code == 0
+    result = await box.check("xlsx", "bad.xlsx")
+    assert result["ok"] is False
+    assert any("cannot read workbook" in r for r in result["reasons"])
