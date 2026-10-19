@@ -4576,3 +4576,9 @@ git push
   - **M3:** `max_tokens` ends the run on its first hit. Consider one recovery retry. A context-length error ends the run as `error` until the ADR-017 context layers land.
 - LiteLLM prints its "Provider List" help banner on stderr several times per call for `gpt-6-luna` (its cost lookup does not know the model). This is cosmetic noise; costs come from `config/models.toml`.
 - There is one container start per run (about 0.6 s) and one matplotlib font-cache build per run (about 1–3 s, on the first chart).
+- **2026-10-14 review, deferred** (fixed items are in `docs/plans/2026-10-14-m1-review-fixes.md`):
+  - M3: `usta/models/gateway.py:115` retries a 429 after a fixed 1 s, then 2 s, and ignores `Retry-After`. A short rate-limit burst ends the run as `provider_quota`.
+  - M2: `code_exec._snapshot` and `Verifier._outputs` use `os.walk` without `onerror`. A `chmod 000` directory in `out/` escapes both the size cap and the checks.
+  - M2: `usta/sandbox/docker.py:266` reports a timeout that escalated to SIGKILL (exit 137) as a plain non-zero exit, not as a timeout.
+  - M2: `skills/pdf-report/scripts/usta_pdf.py:82` treats any string block ending in `.png` as an image path, so a paragraph ending in a file name crashes the build.
+  - Already listed: a crash during verification makes resume send an assistant-last history (`loop.py:117`).
