@@ -22,4 +22,5 @@ write_xlsx("/out/uygunsuzluqlar.xlsx", {
 
 - The first row of each sheet is the header. Keep numbers as numbers (not strings).
 - Sheet names: up to 31 characters; `[]:*?/\` are replaced.
-- The verifier runs `/skills/xlsx/check.py` on every `.xlsx` in `/out`. Empty workbooks and error values (`#REF!`, `#DIV/0!` ...) fail.
+- Write computed values, not formulas: compute in pandas, then write the numbers. The verifier cannot evaluate formulas, so any cell starting with `=` fails.
+- The verifier runs `/skills/xlsx/check.py` on every `.xlsx` in `/out`. Empty workbooks, error values (`#REF!`, `#DIV/0!` ...) and formulas fail.

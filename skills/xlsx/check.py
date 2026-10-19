@@ -24,19 +24,27 @@ def check(path: str) -> None:
         try:
             for ws in wb.worksheets:
                 seen_header = False
-                for row in ws.iter_rows(values_only=True):
-                    row_values = [v for v in row if v is not None and v != ""]
-                    if not row_values:
+                for row in ws.iter_rows():
+                    cells = [c for c in row if c.value is not None and c.value != ""]
+                    if not cells:
                         continue
                     if seen_header:
                         data_rows += 1
                     seen_header = True
-                    for v in row_values:
+                    for c in cells:
+                        v = c.value
                         values += 1
                         if isinstance(v, str):
                             if v.strip().upper() in ERRORS:
                                 reasons.append(f"sheet {ws.title!r} has an error value {v.strip()}")
-                            elif not v.startswith("="):
+                            elif v.startswith("="):
+                                # no formula engine in the sandbox: an unevaluated formula
+                                # cannot be checked (#DIV/0!, #REF!), so it fails (P8)
+                                reasons.append(
+                                    f"sheet {ws.title!r} cell {c.coordinate} has a formula; "
+                                    "write computed values"
+                                )
+                            else:
                                 texts.append(v)
         finally:
             wb.close()
