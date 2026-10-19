@@ -34,18 +34,17 @@ def check(path: str) -> None:
                     for c in cells:
                         v = c.value
                         values += 1
-                        if isinstance(v, str):
-                            if v.strip().upper() in ERRORS:
-                                reasons.append(f"sheet {ws.title!r} has an error value {v.strip()}")
-                            elif v.startswith("="):
-                                # no formula engine in the sandbox: an unevaluated formula
-                                # cannot be checked (#DIV/0!, #REF!), so it fails (P8)
-                                reasons.append(
-                                    f"sheet {ws.title!r} cell {c.coordinate} has a formula; "
-                                    "write computed values"
-                                )
-                            else:
-                                texts.append(v)
+                        if isinstance(v, str) and v.strip().upper() in ERRORS:
+                            reasons.append(f"sheet {ws.title!r} has an error value {v.strip()}")
+                        elif c.data_type == "f" or (isinstance(v, str) and v.startswith("=")):
+                            # no formula engine in the sandbox: an unevaluated formula
+                            # (plain, array or data-table) cannot be checked, so it fails (P8)
+                            reasons.append(
+                                f"sheet {ws.title!r} cell {c.coordinate} has a formula; "
+                                "write computed values"
+                            )
+                        elif isinstance(v, str):
+                            texts.append(v)
         finally:
             wb.close()
     except Exception as e:

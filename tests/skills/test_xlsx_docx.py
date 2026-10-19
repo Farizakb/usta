@@ -61,6 +61,21 @@ async def test_xlsx_with_formulas_fails(box: Box) -> None:
     assert any("formula" in r and "C2" in r for r in result["reasons"])
 
 
+async def test_xlsx_with_array_formula_fails(box: Box) -> None:
+    code = (
+        "from openpyxl import Workbook\n"
+        "from openpyxl.worksheet.formula import ArrayFormula\n"
+        "wb = Workbook(); ws = wb.active\n"
+        "ws.append(['Siyahıda', 'Qalıq', 'Nisbət']); ws.append([3, 1, None])\n"
+        "ws['C2'] = ArrayFormula('C2', '=A2/B2')\n"
+        "wb.save('/out/massiv.xlsx')\n"
+    )
+    assert (await box.run(code)).exit_code == 0
+    result = await box.check("xlsx", "massiv.xlsx")
+    assert not result["ok"]
+    assert any("formula" in r and "C2" in r for r in result["reasons"])
+
+
 async def test_docx_with_heading_paragraph_and_table_passes(box: Box) -> None:
     res = await box.run(DOCX)
     assert res.exit_code == 0, res.stderr
