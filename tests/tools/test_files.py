@@ -127,10 +127,17 @@ async def test_search_is_azerbaijani_case_insensitive(ctx: ToolContext) -> None:
     assert "1 skipped" in out
 
 
-async def test_search_dotless_i_does_not_match_dotted(ctx: ToolContext) -> None:
-    (ctx.files_dir / "a.txt").write_text("IŞIQ\n", encoding="utf-8")
-    assert "a.txt:1" in (await FILE_SEARCH.fn({"query": "ışıq"}, ctx)).content
-    assert "a.txt:1" not in (await FILE_SEARCH.fn({"query": "işiq"}, ctx)).content
+async def test_search_treats_every_form_of_i_alike(ctx: ToolContext) -> None:
+    (ctx.files_dir / "a.txt").write_text("IMEI;Model\nIŞIQ\nİstiqamət\n", encoding="utf-8")
+    for query, line in [
+        ("imei", 1),  # ASCII header: az_casefold alone maps I→ı and missed this
+        ("ışıq", 2),
+        ("işiq", 2),
+        ("istiqamət", 3),
+        ("ıstıqamət", 3),  # typed with ı, text has İ/i
+    ]:
+        out = (await FILE_SEARCH.fn({"query": query}, ctx)).content
+        assert f"a.txt:{line}:" in out, query
 
 
 async def test_search_caps_hits(ctx: ToolContext) -> None:

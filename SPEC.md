@@ -303,7 +303,7 @@ Rejected: rolling summary every N steps (breaks cache constantly); provider-side
 | Group | Tool | Tier | Notes |
 |---|---|---|---|
 | Files | `file.list`, `file.read` | read | workspace + run dirs |
-| | `file.search` | read | `az_casefold` grep |
+| | `file.search` | read | `az_casefold` grep, i/ı/I/İ alike |
 | | `file.write` | local | `/out` of the current run only |
 | Compute | `code_exec` | local | gVisor sandbox (§10) |
 | Web | `web.search` | egress | `SearchPort` (Tavily default, Brave adapter) |
