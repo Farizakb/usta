@@ -7,7 +7,14 @@ from typing import Any
 import anthropic
 
 from usta.core.errors import ConfigError, TransientProviderError
-from usta.core.messages import Message, OpaqueBlock, TextBlock, ToolCall, ToolResult
+from usta.core.messages import (
+    EMPTY_REPLY,
+    Message,
+    OpaqueBlock,
+    TextBlock,
+    ToolCall,
+    ToolResult,
+)
 from usta.core.model import (
     ModelCaps,
     ModelRequest,
@@ -117,6 +124,8 @@ def _message(msg: Message) -> dict[str, Any]:
             )
         elif isinstance(b, OpaqueBlock) and b.provider == "anthropic":
             content.append(b.data)
+    if not content and msg.role == "assistant":
+        content.append({"type": "text", "text": EMPTY_REPLY})
     return {"role": msg.role, "content": content}
 
 
