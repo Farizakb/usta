@@ -35,6 +35,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["usta"]
 
+[tool.uv]
+# Supply-chain cooldown: ignore releases younger than 7 days (malicious uploads are usually pulled within hours).
+exclude-newer = "7 days"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
