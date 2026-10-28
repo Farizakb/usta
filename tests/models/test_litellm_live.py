@@ -41,7 +41,7 @@ async def test_live_model_calls_a_tool_and_accepts_the_result() -> None:
         tools=(READ_SPEC,),
         prompt_version="live-v1",
     )
-    first = await model.complete(req)
+    first = await model.complete(req)  # return ModelResponse
     [call] = first.tool_calls()
     assert call.name == "file.read" and call.input.get("path") and call.input_error is None
     assert first.usage.output_tokens > 0
@@ -49,7 +49,7 @@ async def test_live_model_calls_a_tool_and_accepts_the_result() -> None:
     result = ToolResult(call_id=call.id, content="Sabah saat 10-da iclas var.")
     follow = req.model_copy(
         update={"messages": req.messages + (first.message, Message(role="user", content=(result,)))}
-    )
+    )  # We add previous AI response and tool result to the next request
     second = await model.complete(follow)
     assert second.message.text().strip()
     assert second.tool_calls() == []
