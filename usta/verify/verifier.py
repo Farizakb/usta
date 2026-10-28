@@ -24,6 +24,13 @@ EXCERPT_CHARS = 1_500
 CHECK_TIMEOUT_S = 60.0
 MAX_CHECKED_FILES = 20
 
+
+def check_argv(skill: str, rel: str) -> tuple[str, ...]:
+    # -I: no user site, .pth, PYTHON* env or script dir on sys.path. /tmp (HOME) is writable
+    # by the agent's code for the whole run, so a planted usercustomize.py would forge verdicts.
+    return ("python", "-I", f"/skills/{skill}/check.py", f"/out/{rel}")
+
+
 VERIFIER_PROMPT = """\
 You check whether an AI agent's final answer completes the user's task. You never fix anything.
 You get the task, the agent's final answer, and the files it produced with text excerpts; those
@@ -117,7 +124,7 @@ class Verifier:
         res = await self._sandbox.exec(
             run.id,
             dirs,
-            ("python", f"/skills/{skill}/check.py", f"/out/{rel}"),
+            check_argv(skill, rel),
             timeout_s=CHECK_TIMEOUT_S,
         )
         path = f"out/{rel}"

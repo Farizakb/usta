@@ -15,7 +15,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # no network fetc
 import litellm  # noqa: E402
 
 from usta.core.errors import ConfigError  # noqa: E402
-from usta.core.messages import Message, TextBlock, ToolCall  # noqa: E402
+from usta.core.messages import EMPTY_REPLY, Message, TextBlock, ToolCall  # noqa: E402
 from usta.core.model import (  # noqa: E402
     ModelCaps,
     ModelRequest,
@@ -107,8 +107,11 @@ def _messages(req: ModelRequest) -> list[dict[str, Any]]:
         out.append({"role": "system", "content": [_system_part(b) for b in req.system]})
     for m in req.messages:
         if m.role == "assistant":
-            msg: dict[str, Any] = {"role": "assistant", "content": m.text() or None}
             calls = m.tool_calls()
+            msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": m.text() or (None if calls else EMPTY_REPLY),
+            }
             if calls:
                 msg["tool_calls"] = [
                     {

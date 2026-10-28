@@ -94,6 +94,26 @@ async def test_budget_park_then_decline(tmp_path: Path) -> None:
         await worker.answer_budget(run.id, approve=True)
 
 
+async def test_budget_approval_refused_once_monthly_cap_is_spent(tmp_path: Path) -> None:
+    script = [call("test.echo", {"text": str(i)}) for i in range(2)] + [reply("bitdi")]
+    worker, store, _, _ = make_worker(script, tmp_path, cap=0.5)
+    run = await worker.execute((await worker.submit("u1", "t")).id)
+    assert run.status == RunStatus.AWAITING_USER
+    assert await store.user_month_cost("u1") >= 0.5  # precondition: this run used the month
+    with pytest.raises(UserBudgetExceeded):
+        await worker.answer_budget(run.id, approve=True)
+    after = await store.load(run.id)
+    assert after.status == RunStatus.AWAITING_USER and after.cost_cap_usd == pytest.approx(0.5)
+
+
+async def test_budget_decline_still_works_once_monthly_cap_is_spent(tmp_path: Path) -> None:
+    script = [call("test.echo", {"text": str(i)}) for i in range(2)]
+    worker, _, _, _ = make_worker(script, tmp_path, cap=0.5)
+    run = await worker.execute((await worker.submit("u1", "t")).id)
+    run = await worker.answer_budget(run.id, approve=False)
+    assert run.stop_reason == StopReason.BUDGET_DECLINED
+
+
 async def test_cancel_parked_run_finishes_it_and_cancel_running_sets_flag(tmp_path: Path) -> None:
     script = [call("test.echo", {"text": str(i)}) for i in range(2)]
     worker, store, _, _ = make_worker(script, tmp_path)

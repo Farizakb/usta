@@ -24,20 +24,27 @@ def check(path: str) -> None:
         try:
             for ws in wb.worksheets:
                 seen_header = False
-                for row in ws.iter_rows(values_only=True):
-                    row_values = [v for v in row if v is not None and v != ""]
-                    if not row_values:
+                for row in ws.iter_rows():
+                    cells = [c for c in row if c.value is not None and c.value != ""]
+                    if not cells:
                         continue
                     if seen_header:
                         data_rows += 1
                     seen_header = True
-                    for v in row_values:
+                    for c in cells:
+                        v = c.value
                         values += 1
-                        if isinstance(v, str):
-                            if v.strip().upper() in ERRORS:
-                                reasons.append(f"sheet {ws.title!r} has an error value {v.strip()}")
-                            elif not v.startswith("="):
-                                texts.append(v)
+                        if isinstance(v, str) and v.strip().upper() in ERRORS:
+                            reasons.append(f"sheet {ws.title!r} has an error value {v.strip()}")
+                        elif c.data_type == "f" or (isinstance(v, str) and v.startswith("=")):
+                            # no formula engine in the sandbox: an unevaluated formula
+                            # (plain, array or data-table) cannot be checked, so it fails (P8)
+                            reasons.append(
+                                f"sheet {ws.title!r} cell {c.coordinate} has a formula; "
+                                "write computed values"
+                            )
+                        elif isinstance(v, str):
+                            texts.append(v)
         finally:
             wb.close()
     except Exception as e:

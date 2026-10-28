@@ -12,7 +12,7 @@ from usta.core.errors import (
     ProviderRateLimited,
     TransientProviderError,
 )
-from usta.core.messages import Message, ToolResult
+from usta.core.messages import Message, TextBlock, ToolResult
 from usta.models.anthropic_adapter import AnthropicModel
 from usta.models.caps import load_catalog
 
@@ -168,3 +168,19 @@ async def test_profile_api_base_is_used(monkeypatch: pytest.MonkeyPatch) -> None
 
     await make_model(handler, api_base="https://gateway.example").complete(CONTRACT_REQUEST)
     assert seen["host"] == "gateway.example"
+
+
+@pytest.mark.parametrize("content", [(), (TextBlock(text=""),)])
+async def test_empty_assistant_turn_is_sent_as_placeholder(content: tuple) -> None:
+    seen: dict = {}
+    req = CONTRACT_REQUEST.model_copy(
+        update={
+            "messages": (
+                Message.user_text("a"),
+                Message(role="assistant", content=content),
+                Message.user_text("b"),
+            )
+        }
+    )
+    await make_model(capture(seen)).complete(req)
+    assert seen["body"]["messages"][1]["content"] == [{"type": "text", "text": "(empty reply)"}]

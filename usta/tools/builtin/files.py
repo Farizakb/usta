@@ -149,8 +149,13 @@ async def _list_tool(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     return ToolOutput(await asyncio.to_thread(_list, target, ctx, args.get("recursive", False)))
 
 
+def _search_fold(text: str) -> str:
+    """az_casefold, then ı→i: search wants recall, so i ı I İ all match each other."""
+    return az_casefold(text).replace("ı", "i")
+
+
 def _search(root: Path, target: Path, ctx: ToolContext, query: str) -> str:
-    needle = az_casefold(query)
+    needle = _search_fold(query)
     hits: list[str] = []
     scanned = skipped = 0
     files = (
@@ -172,7 +177,7 @@ def _search(root: Path, target: Path, ctx: ToolContext, query: str) -> str:
             continue
         scanned += 1
         for n, line in enumerate(text.splitlines(), start=1):
-            if needle in az_casefold(line):
+            if needle in _search_fold(line):
                 hits.append(f"{shown}:{n}: {line.strip()[:_LINE_CHARS]}")
                 if len(hits) >= MAX_HITS:
                     return "\n".join(hits) + f"\n[stopped at {MAX_HITS} matches]"
@@ -255,7 +260,7 @@ FILE_SEARCH = Tool(
     name="file.search",
     description=(
         "Find lines containing a text in UTF-8 text files under files/ or out/. "
-        "Case-insensitive with Azerbaijani rules (İ/i, I/ı); plain text, not a regex."
+        "Case-insensitive; i, ı, I and İ all match each other; plain text, not a regex."
     ),
     input_schema={
         "type": "object",

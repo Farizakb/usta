@@ -8,6 +8,8 @@ from pydantic import Field
 
 from usta.core.base import Frozen
 
+EMPTY_REPLY = "(empty reply)"  # sent for an assistant turn with no content; APIs reject empty turns
+
 
 class TextBlock(Frozen):
     type: Literal["text"] = "text"

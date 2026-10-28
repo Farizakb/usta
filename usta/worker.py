@@ -103,6 +103,12 @@ class Worker:
                 await self._store.checkpoint(run)
                 await self._emit(Event.finished(run), run.user_id)
                 return run
+            spent = await self._store.user_month_cost(run.user_id)
+            if spent >= self._user_cap:  # same rule as submit(); the run stays parked
+                raise UserBudgetExceeded(
+                    f"user {run.user_id!r} has spent ${spent:.2f} of "
+                    f"${self._user_cap:.2f} this month"
+                )
             run.cost_cap_usd += self._budget.cost_step_usd
             run.pending = None
             run.status = RunStatus.QUEUED

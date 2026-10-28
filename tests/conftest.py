@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from usta.core.sandbox import ExecResult
 from usta.core.workspace import RunDirs
 from usta.sandbox.docker import DockerSandbox, SandboxConfig
+from usta.verify.verifier import check_argv
 
 TABLES = "users, runs, run_checkpoints, model_calls, tool_calls, run_events"
 
@@ -106,9 +107,7 @@ class Box:
         )
 
     async def check(self, skill: str, rel: str) -> dict:
-        res = await self.sandbox.exec(
-            self.run_id, self.dirs, ("python", f"/skills/{skill}/check.py", f"/out/{rel}")
-        )
+        res = await self.sandbox.exec(self.run_id, self.dirs, check_argv(skill, rel))
         assert res.exit_code == 0, res.stderr
         return json.loads(res.stdout.strip().splitlines()[-1])
 

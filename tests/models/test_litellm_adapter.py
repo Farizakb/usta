@@ -179,3 +179,24 @@ async def test_no_key_with_api_base_uses_placeholder_key() -> None:
     await model.complete(CONTRACT_REQUEST)
     assert fake.kwargs["api_key"] == "no-key"
     assert fake.kwargs["api_base"] == "http://localhost:11434"
+
+
+async def test_empty_assistant_turn_is_sent_as_placeholder() -> None:
+    fake = FakeCompletion(WIRE)
+    req = CONTRACT_REQUEST.model_copy(
+        update={
+            "messages": (
+                Message.user_text("a"),
+                Message(role="assistant", content=()),
+                Message.user_text("b"),
+            )
+        }
+    )
+    await make(fake).complete(req)
+    assert fake.kwargs["messages"][2] == {"role": "assistant", "content": "(empty reply)"}
+
+
+async def test_tool_call_turn_without_text_keeps_null_content() -> None:
+    fake = FakeCompletion(WIRE)
+    await make(fake).complete(CONTRACT_REQUEST)
+    assert fake.kwargs["messages"][2]["content"] is None  # Review Focus 5
